@@ -96,7 +96,7 @@ labelled rather than quietly dropped.
 ## Install and run
 
 ```bash
-git clone https://github.com/nicholasbaillargeon-ux/capstone.git && cd capstone
+git clone https://github.com/nicholasbaillargeon-ux/Capstone.git && cd Capstone
 cp .env.example .env && $EDITOR .env      # SEC_USER_AGENT needs a real email
 ```
 
