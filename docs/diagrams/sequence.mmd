@@ -1,0 +1,39 @@
+sequenceDiagram
+    autonumber
+    actor N as Nick
+    participant API as filingdesk-api
+    participant MCP as filingdesk-mcp
+    participant DUCK as filings.duckdb
+    participant VEC as vault.db
+    participant LLM as Ollama qwen2.5-7b
+
+    N->>API: POST /api/report
+    API->>MCP: fd_resolve_company
+    MCP-->>API: CIK or ambiguity candidates
+    alt ambiguous
+        API-->>N: disambiguation prompt, halt
+    end
+    API->>LLM: plan with tool schemas
+    LLM-->>API: tool_calls
+    API->>MCP: fd_get_concept and fd_compute_metric
+    MCP->>DUCK: SQL over normalized facts
+    DUCK-->>MCP: rows
+    MCP-->>API: typed facts with accession numbers
+    API->>API: compute ratios in Python, record formulas
+    API->>LLM: embed question
+    LLM-->>API: vector
+    API->>VEC: hybrid top-k
+    VEC-->>API: vault passages
+    API->>LLM: draft report, cite every figure by fact id
+    LLM-->>API: draft markdown
+    API->>API: grounding guard resolves every citation
+    alt figure not traceable to a fact
+        API->>LLM: repair with offending claims listed
+        LLM-->>API: corrected draft
+        API->>API: re-check
+    end
+    alt still unsupported after one repair
+        API-->>N: report with claims struck and flagged
+    else clean
+        API-->>N: report + fact table + accession links + trace_id
+    end

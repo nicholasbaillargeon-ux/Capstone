@@ -1,0 +1,14 @@
+{% if not items %}
+<p class="empty">No reports yet.</p>
+{% else %}
+<ul class="hist">
+  {% for h in items %}
+  <li class="hist-row">
+    <span class="hist-verdict {{ h.cls }}">{{ h.verdict }}</span>
+    <span class="hist-q">{{ h.question }}</span>
+    <span class="hist-meta">{{ h.facts }} facts · {{ h.ms }} ms</span>
+    <span class="hist-trace">{{ h.trace_id }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

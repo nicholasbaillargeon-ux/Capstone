@@ -1,0 +1,32 @@
+# Append to the existing homelab Caddyfile.
+filing.baillargeon.casa {
+	# Internal CA — the .casa zone is not publicly resolvable.
+	# If DNS-01 is already wired up for this zone, swap in:
+	#   tls { dns <provider> {env.DNS_API_TOKEN} }
+	tls internal
+
+	# Everything except the event stream. A compressor sitting in front of SSE
+	# can hold stage events in its buffer waiting for a block to fill.
+	@notstream not path /api/report/stream
+	encode @notstream zstd gzip
+
+	reverse_proxy 127.0.0.1:8088 {
+		# Caddy stops sending traffic when the container reports degraded,
+		# which is the whole reason /api/health checks data freshness
+		# rather than just returning 200.
+		health_uri      /api/health
+		health_interval 30s
+		health_timeout  5s
+
+		# /api/report/stream is Server-Sent Events. Caddy detects that and
+		# flushes immediately, but say it explicitly: a buffered proxy holds
+		# every stage event until the request completes, which turns a
+		# streaming UI back into a 90-second blank page.
+		flush_interval -1
+	}
+
+	log {
+		output file /var/log/caddy/filingdesk.log
+		format json
+	}
+}

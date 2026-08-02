@@ -1,0 +1,42 @@
+flowchart TB
+    subgraph client["Client"]
+        CLI["filing CLI"]
+        WEB["HTMX web UI"]
+    end
+
+    subgraph api["filingdesk-api · FastAPI · systemd unit"]
+        ORCH["Orchestrator<br/>plan / tools / draft"]
+        RET["Retriever<br/>vector + BM25 hybrid"]
+        CALC["Metric calculator<br/>ratios in Python"]
+        GRD["Grounding guard<br/>numeric claim check"]
+    end
+
+    subgraph mcp["filingdesk-mcp · self-written · stdio"]
+        TOOLS["fd_resolve_company<br/>fd_get_concept<br/>fd_get_statement<br/>fd_compute_metric<br/>fd_compare_companies<br/>fd_list_filings"]
+    end
+
+    subgraph data["Local data · no network at request time"]
+        DUCK[("filings.duckdb<br/>+ Parquet")]
+        VDB[("vault.db<br/>sqlite-vec")]
+    end
+
+    NORM["Normalizer<br/>tag map · restatements · units"]
+    EDGAR["SEC EDGAR<br/>companyfacts.zip"]
+    VAULT["brain vault<br/>Gitea clone"]
+    OLL["Ollama · CPU<br/>qwen2.5:7b-instruct-q4_K_M<br/>nomic-embed-text"]
+
+    CLI --> ORCH
+    WEB --> ORCH
+    ORCH -->|MCP stdio| mcp
+    ORCH --> RET
+    ORCH --> CALC
+    ORCH --> GRD
+    GRD --> ORCH
+    CALC --> TOOLS
+    RET --> VDB
+    TOOLS --> DUCK
+    EDGAR -->|nightly timer| NORM
+    NORM --> DUCK
+    VAULT -->|nightly timer| VDB
+    ORCH -->|chat + tool calls| OLL
+    RET -->|embed| OLL

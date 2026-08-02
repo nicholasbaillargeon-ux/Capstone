@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filing Desk — what companies actually reported</title>
+<link rel="stylesheet" href="/static/app.css">
+{# Not deferred: the saved theme must be stamped on <html> before first
+   paint, or dark-mode users get a light flash on every load. #}
+<script src="/static/theme.js"></script>
+<script src="/static/charts.js" defer></script>
+<script src="/static/dashboard.js" defer></script>
+</head>
+<body data-ticker="{{ ticker }}">
+<div class="page">
+
+  {% if stub %}
+  <div class="alert" role="note">
+    <p class="alert-title">Synthetic mode</p>
+    <p><code>FD_STUB=1</code> is set. Every figure on this page is a fabricated
+      fixture, not a reported number.</p>
+  </div>
+  {% endif %}
+
+  {# Utility row, pinned to the top-right corner and above everything else. #}
+  <div class="topbar">
+    <button class="icon-btn" id="theme-toggle" type="button"
+            aria-label="Switch between light and dark theme"
+            title="Switch between light and dark theme">
+      <span class="icon-btn-glyph" aria-hidden="true">◐</span>
+      <span class="icon-btn-text">Theme</span>
+    </button>
+  </div>
+
+  <header class="masthead">
+    <div class="masthead-text">
+      <h1 class="wordmark">Filing Desk</h1>
+      <p class="tagline">
+        What public companies actually reported. Every figure is retrieved from a
+        specific filing — none are generated.
+      </p>
+    </div>
+    <div class="masthead-side">
+      <div class="health" id="health"><span class="chip">checking…</span></div>
+      <a class="cta" href="/ask">
+        <span class="cta-title">Ask a question</span>
+        <span class="cta-sub">Plain English, every figure cited</span>
+        <span class="cta-arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  </header>
+
+  {# One filter row, above everything it scopes. #}
+  <section class="filters" aria-label="Filters">
+    <div class="filter search-filter">
+      <label class="label" for="q">Company</label>
+      <div class="combo">
+        <input id="q" type="search" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="false" aria-controls="results"
+               aria-autocomplete="list"
+               placeholder="Search {{ '{:,}'.format(universe) }} SEC filers — ticker or name">
+        <ul id="results" class="results" role="listbox" hidden></ul>
+      </div>
+    </div>
+
+    <div class="filter">
+      <span class="label" id="period-label">Period</span>
+      <div class="segmented" role="radiogroup" aria-labelledby="period-label">
+        <button type="button" role="radio" data-period="quarterly"
+                aria-checked="true" class="is-on">Quarterly</button>
+        <button type="button" role="radio" data-period="annual"
+                aria-checked="false">Annual</button>
+      </div>
+    </div>
+
+    <div class="filter">
+      <span class="label" id="range-label">Range</span>
+      <div class="segmented" role="radiogroup" aria-labelledby="range-label">
+        <button type="button" role="radio" data-limit="8" aria-checked="false">8</button>
+        <button type="button" role="radio" data-limit="12" aria-checked="true"
+                class="is-on">12</button>
+        <button type="button" role="radio" data-limit="20" aria-checked="false">20</button>
+        <button type="button" role="radio" data-limit="40" aria-checked="false">Max</button>
+      </div>
+    </div>
+
+    <div class="filter filter-end">
+      <span class="label">&nbsp;</span>
+      <button class="ghost" id="refresh" type="button"
+              title="Filings already refresh by themselves on load. This forces
+                     a pull right now, ignoring the freshness window.">↻ Force re-sync</button>
+    </div>
+  </section>
+
+  <p class="featured">
+    <span class="label">Jump to</span>
+    {% for t in featured %}<button type="button" class="pill-btn" data-jump="{{ t }}">{{ t }}</button>{% endfor %}
+  </p>
+
+  <div id="company" aria-live="polite">
+    <p class="empty">Loading…</p>
+  </div>
+
+  <noscript>
+    <div class="alert" role="note">
+      <p class="alert-title">JavaScript is off</p>
+      <p>The charts are drawn in the browser, so this dashboard needs it. The
+        data is still reachable without it — see
+        <code>/api/company/NVDA</code>, and
+        <a href="/ask">the question page</a> works without JavaScript.</p>
+    </div>
+  </noscript>
+
+  <footer class="foot">
+    <p>
+      Filing Desk describes what was reported and how it moved. It is not investment
+      advice: no recommendations, price targets, valuations or buy/sell framing, and
+      no market data — SEC filings only. Figures come from XBRL company facts;
+      quarters marked <b>derived</b> were reconstructed, not filed.
+    </p>
+  </footer>
+</div>
+</body>
+</html>

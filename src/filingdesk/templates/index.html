@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filing Desk</title>
+<link rel="stylesheet" href="/static/app.css">
+{# Not deferred — the saved theme is stamped before first paint. #}
+<script src="/static/theme.js"></script>
+<script src="/static/htmx.min.js"></script>
+<script src="/static/htmx-ext-sse.js"></script>
+</head>
+<body>
+<div class="page">
+
+  {% if stub %}
+  <div class="alert" role="note">
+    <p class="alert-title">Synthetic mode</p>
+    <p>
+      <code>FD_STUB=1</code> is set. Facts are fabricated fixtures from
+      <code>stub.py</code> and the language model is faked. Nothing on this page is a
+      real reported figure.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="topbar">
+    <button class="icon-btn" id="theme-toggle" type="button"
+            aria-label="Switch between light and dark theme"
+            title="Switch between light and dark theme">
+      <span class="icon-btn-glyph" aria-hidden="true">◐</span>
+      <span class="icon-btn-text">Theme</span>
+    </button>
+  </div>
+
+  <p class="backlink">
+    <a class="ghost" href="/">← Back to Filing Desk</a>
+  </p>
+
+  <header class="masthead">
+    <div class="masthead-text">
+      <h1 class="wordmark">Filing Desk <span class="sub-page">· Ask</span></h1>
+      <p class="tagline">
+        What public companies actually reported. Every figure is retrieved from a
+        specific filing; none are generated.
+      </p>
+    </div>
+    <div class="masthead-side">
+      <div class="health" hx-get="/api/health/html" hx-trigger="load, every 30s">
+        <span class="chip">checking…</span>
+      </div>
+      <a class="cta" href="/">
+        <span class="cta-title">Charts &amp; figures</span>
+        <span class="cta-sub">Every filed number, no model involved</span>
+        <span class="cta-arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  </header>
+
+  {% if not model_enabled %}
+  <div class="alert" role="note">
+    <p class="alert-title">No model configured — answers will be refused</p>
+    <p>
+      Ask anything and the pipeline runs as far as it can, then declines rather
+      than inventing prose: the scope gate, ticker resolution and the refusal
+      machinery all work without a model. Only the final written summary needs
+      one. <b><a href="/">The dashboard</a></b> charts every one of these figures
+      with no model involved at any point.
+    </p>
+    <p>
+      To enable answers, set <code>FD_LLM_PROVIDER</code> to <code>ollama</code>
+      or <code>openai</code> in <code>.env</code>, then confirm with
+      <code>python -m filingdesk.models --check</code>.
+    </p>
+  </div>
+  {% endif %}
+
+  {# action/method are the fallback: without htmx this posts and renders a full
+     page, just with no stages along the way. #}
+  <form class="ask" action="/report" method="post"
+        hx-get="/ui/run" hx-target="#run" hx-swap="innerHTML">
+    <div class="ask-row">
+      <label class="field field-ticker">
+        <span class="label">Ticker</span>
+        <input name="ticker" value="{{ ticker or 'NVDA' }}" maxlength="8"
+               autocomplete="off" spellcheck="false" required>
+      </label>
+      <label class="field field-q">
+        <span class="label">Question</span>
+        <input name="question" required minlength="3" maxlength="500"
+               autocomplete="off"
+               placeholder="How has gross margin moved over the last 8 quarters?"
+               value="{{ question or '' }}">
+      </label>
+      <button class="go" type="submit">Ask</button>
+    </div>
+    <div class="examples">
+      <span class="label">Try</span>
+      {% for ex in examples %}
+      <button type="button" class="example"
+              hx-get="/ui/run" hx-target="#run" hx-swap="innerHTML"
+              hx-vals='{{ ex.vals }}'>{{ ex.ticker }} · {{ ex.question }}</button>
+      {% endfor %}
+    </div>
+    <noscript>
+      <p class="nojs-note">
+        JavaScript is off, so this posts normally and returns the finished report —
+        you just don't see the stages as they happen.
+      </p>
+    </noscript>
+  </form>
+
+  <div id="run">
+    {% if result %}
+      {{ report_fragment }}
+    {% endif %}
+  </div>
+
+  <section class="panel history">
+    <div class="panel-head">
+      <p class="label">Recent</p>
+      <button class="ghost" hx-get="/api/history/html" hx-target="#history"
+              hx-swap="innerHTML">Refresh</button>
+    </div>
+    <div id="history" hx-get="/api/history/html" hx-trigger="load"
+         hx-swap="innerHTML">
+      <p class="empty">loading…</p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      Filing Desk describes what was reported and how it moved. It is not investment
+      advice: no recommendations, price targets, valuations, or buy/sell framing, and no
+      market data — filings only.
+    </p>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,137 @@
+{% if r.refused %}
+<section class="panel refusal">
+  <div class="panel-head">
+    <p class="label">Refused</p>
+    <span class="chip chip-stop">no answer given</span>
+    {% if r.trace_id %}<span class="chip">trace <b>{{ r.trace_id }}</b></span>{% endif %}
+  </div>
+  <div class="panel-body">
+    {% if r.question %}<p class="asked">{{ r.question }}</p>{% endif %}
+    <p class="refusal-text">{{ r.refused }}</p>
+    <p class="note">
+      Declining is a result, not a failure. A question with no tool behind it, or about a
+      company with no filings loaded, is answered by saying so rather than by composing
+      something plausible.
+    </p>
+  </div>
+</section>
+{% else %}
+
+<section class="panel" aria-label="Report">
+  <div class="panel-head">
+    <p class="label">Report</p>
+    {% if r.unsupported_claims %}
+    <span class="chip chip-stop">{{ r.unsupported_claims|length }} figure(s) struck</span>
+    {% else %}
+    <span class="chip chip-ok">grounded — 0 unsupported claims</span>
+    {% endif %}
+    <span class="chip">trace <b>{{ r.trace_id }}</b></span>
+    {% if r.latency_ms %}
+    <span class="chip">total <b>{{ r.latency_ms.get('total', 0) }} ms</b></span>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+    {% if r.question %}<p class="asked">{{ r.question }}</p>{% endif %}
+    <div class="report-prose">{{ report }}</div>
+  </div>
+  {% if r.latency_ms %}
+  <div class="meta-row">
+    {% for k, v in r.latency_ms.items() %}
+    <span class="chip">{{ k }} <b>{{ v }} ms</b></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% if r.unsupported_claims %}
+<section class="panel flagged">
+  <div class="panel-head">
+    <p class="label">Unverified after one repair</p>
+    <span class="chip chip-stop">shown, not retried</span>
+  </div>
+  <div class="panel-body">
+    <p class="note">
+      These figures do not trace to any retrieved fact. The repair pass runs once —
+      looping until the check passes would optimise for satisfying the check rather than
+      being correct.
+    </p>
+    <ul class="claims">
+      {% for p in r.unsupported_claims %}
+      <li>
+        <code class="claim">{{ p.claim }}</code>
+        <span class="claim-why">{{ p.reason }}</span>
+        <span class="claim-ctx">{{ p.sentence }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel" aria-label="Facts">
+  <div class="panel-head">
+    <p class="label">Facts retrieved</p>
+    <span class="chip">{{ rows|length }} rows</span>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Id</th>
+          <th scope="col">Concept</th>
+          <th scope="col" class="right">Value</th>
+          <th scope="col">Period end</th>
+          <th scope="col">Form</th>
+          <th scope="col">Accession</th>
+          <th scope="col">Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr id="fact-{{ row.id }}">
+          <td class="col-id">{{ row.id }}</td>
+          <td class="col-concept">
+            {{ row.concept }}
+            {% if row.formula %}<span class="formula">{{ row.formula }}</span>{% endif %}
+          </td>
+          <td class="col-val">{{ row.value }}</td>
+          <td class="col-end">{{ row.end }}</td>
+          <td>{{ row.form }}</td>
+          <td class="col-accn {% if row.computed %}computed{% endif %}">{{ row.accn }}</td>
+          <td>
+            <span class="pill-stack">
+              {% for f in row.flags %}
+              <span class="pill pill-{{ f }}">{{ f }}</span>
+              {% endfor %}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="meta-row">
+    <span class="chip"><b>derived</b> = Q4 reconstructed as FY − (Q1+Q2+Q3)</span>
+    <span class="chip"><b>restated</b> = a later filing superseded the original</span>
+    <span class="chip"><b>computed</b> = ratio calculated in Python, not filed</span>
+  </div>
+</section>
+
+{% if r.passages %}
+<section class="panel" aria-label="Framing">
+  <div class="panel-head">
+    <p class="label">Framing — from my notes</p>
+    <span class="chip">contributes prose, never figures</span>
+  </div>
+  <div class="panel-body">
+    {% for p in r.passages %}
+    <div class="passage">
+      <span class="passage-path">{{ p.path }}</span>
+      <span class="passage-score">{{ p.score }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endif %}

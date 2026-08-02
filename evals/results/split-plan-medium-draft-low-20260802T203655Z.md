@@ -1,0 +1,23 @@
+# Eval run — split-plan-medium-draft-low
+
+Automated: **11/15**  ·  20260802T203655Z
+
+| id | kind | auto | detail | hand | notes |
+|---|---|---|---|---|---|
+| H1 | report | FAIL | ungrounded: 70%, 2025 b, 70% |  |  |
+| H2 | report | PASS | 1 facts, 0 ungrounded |  |  |
+| H3 | report | FAIL | ungrounded: 0.0488, 0.7493, 0.7005, 0.0488 |  |  |
+| H4 | report | PASS | 1 facts, 0 ungrounded |  |  |
+| H5 | report | PASS | 36 facts, 0 ungrounded |  |  |
+| H6 | report | PASS | 8 facts, 0 ungrounded |  |  |
+| E1 | report | PASS | 60 facts, 0 ungrounded |  |  |
+| E2 | report | FAIL | report cites no facts |  |  |
+| E3 | report | PASS | 1 facts, 0 ungrounded |  |  |
+| E4 | report | FAIL | ungrounded: 0.7500 b |  |  |
+| E5 | report | PASS | 3 facts, 0 ungrounded |  |  |
+| R1 | refuse | PASS | refused: out_of_scope_advice |  |  |
+| R2 | refuse | PASS | refused: out_of_scope_market_data |  |  |
+| R3 | refuse | PASS | refused: out_of_scope_forecast |  |  |
+| R4 | refuse | PASS | refused: unknown_ticker |  |  |
+
+Hand-grade column is deliberately blank. The automated check verifies grounding and refusal type; it cannot tell you whether the prose is *useful*. Fill it in while reading `report_md` in the JSON.

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "filingdesk"
+version = "0.1.0"
+description = "Grounded analysis of SEC filings on local CPU inference"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# tests/ imports `from filingdesk import ...`; the package lives under src/.
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "BLE"]
+
+[tool.mypy]
+files = ["src"]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true

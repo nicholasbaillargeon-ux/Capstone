@@ -1,0 +1,59 @@
+# /etc/systemd/system/filingdesk.service
+#
+# Runs Filing Desk straight from a checkout with its own virtualenv, rather
+# than through Docker (see filingdesk-docker.service for that path). This is
+# the right unit when the app is being iterated on: no image rebuild between
+# a code change and a restart.
+#
+# Install:
+#   sudo cp deploy/filingdesk-native.service /etc/systemd/system/filingdesk.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now filingdesk
+#
+# Then:  systemctl status filingdesk · journalctl -u filingdesk -f
+[Unit]
+Description=Filing Desk — grounded analysis of SEC filings
+Documentation=https://gitea.baillargeon.casa/nick/capstone
+# Not just network.target: the app resolves SEC EDGAR on its first request,
+# and starting before DNS is up turns a cold boot into a page of fetch errors.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=nbaillar
+Group=nbaillar
+WorkingDirectory=/home/nbaillar/Capstone
+
+# run.sh is the single launch path — the same command by hand, by systemd and
+# in the runbook, so there is no second way to start this that can drift.
+# It reads .env itself, which is why no EnvironmentFile is set here: the SEC
+# User-Agent contains parentheses and spaces, and having two parsers disagree
+# about that string is a genuinely annoying way to lose an afternoon.
+ExecStart=/home/nbaillar/Capstone/run.sh
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=3
+# Give up only if it is crash-looping, so a real fault still surfaces instead
+# of restarting forever behind a green status.
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Logs are already structured JSON on stdout; journald keeps them queryable
+# with `journalctl -u filingdesk -o cat | jq`.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=filingdesk
+
+# Modest hardening. The app needs to write its DuckDB cache under $HOME and
+# reach the network, and nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

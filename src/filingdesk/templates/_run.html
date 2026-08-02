@@ -1,0 +1,9 @@
+{# The SSE shell. htmx opens the connection, swaps each `stage` frame into the
+   rail, and swaps the finished report into the slot on `done`, then closes on
+   the `close` sentinel that follows it. No application JavaScript involved. #}
+<div hx-ext="sse" sse-connect="{{ stream_url }}" sse-close="close">
+  <section class="progress" sse-swap="stage" aria-live="polite">
+    {{ rail }}
+  </section>
+  <div class="report-slot" sse-swap="done"></div>
+</div>

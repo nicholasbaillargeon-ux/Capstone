@@ -1,0 +1,118 @@
+"""The grounding guard — spec Open Question 1, resolved by building it.
+
+Decision: require the model to emit [[fact:N]] markers AND verify the
+numbers independently. Citations alone are not enough (the model will cite
+a real fact next to a wrong number); number-matching alone is not enough
+(no way to tell which fact a figure came from). Both, or neither works.
+"""
+import re
+
+# Two things this pattern gets wrong if written loosely, both silent:
+#
+# `(?:\.\d+)?` rather than `\.?\d*` — the loose form swallowed the full stop
+# ending a sentence, so "$706,413,000,000." reached interpretations() as an
+# unparseable token, produced no candidates, and was skipped. A figure the
+# guard could not parse was treated exactly like one it had cleared, which
+# left the last number in a sentence — usually the headline one — unverified.
+#
+# Suffixes longest-first — unanchored alternation takes the first branch that
+# matches, so "bn|B|billion" clipped "$12.5 billion" to "$12.5 b". The scale
+# still resolved to 1e9, but the UNVERIFIED list quoted a figure the answer
+# never contained. (interpretations() is anchored with $, so it backtracks
+# into the right branch and was never affected.)
+NUM = re.compile(r"\$?\d[\d,]*(?:\.\d+)?\s*(?:%|billion|bn|b|million|m|k)?",
+                 re.I)
+CITE = re.compile(r"\[\[fact:(\d+)\]\]")
+DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+# Prose dates, stripped for the same reason as ISO ones: the day-of-month is
+# not a claim about a filing. Years and single digits are already ignored
+# below, but a two-digit day is not — so "period ending January 31 2026"
+# reported `31` as a figure tracing to no fact, and every answer from a model
+# that writes dates in words came back dirty. Which models do is not something
+# the prompt reliably controls, so the guard has to.
+_MONTH = (r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+          r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+          r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?")
+_DAY = r"\d{1,2}(?:st|nd|rd|th)?"
+_YEAR = r"(?:19|20)\d{2}"
+# Splitting on ".!?" alone cut "ended Jan. 31, 2026" in half, which put the
+# day in a sentence of its own where no date pattern could reach it. The
+# lookbehinds keep abbreviated months attached to what follows. Every branch
+# is four characters, which is what Python's fixed-width lookbehind requires;
+# "Sept." needs its own.
+SENTENCE = re.compile(
+    r"(?<=[.!?])"
+    r"(?<!(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.)(?<!Sept\.)"
+    r"\s+")
+
+PROSE_DATE = re.compile("|".join([
+    rf"\b{_MONTH}\s+{_DAY},?\s+{_YEAR}",              # January 31, 2026
+    rf"\b{_DAY}\s+{_MONTH},?\s+{_YEAR}",              # 31 January 2026
+    rf"\b{_MONTH}\s+{_YEAR}",                         # January 2026
+    # The bare "Month DD" form carries a risk the others do not: "may 5%" is
+    # English, not a date, and swallowing it would hide a fabricated figure —
+    # a false negative here is far worse than a false positive. Hence the
+    # lookahead. Its `\b` applies to the word-suffixes only: there is no word
+    # boundary between "%" and the space after it, so a trailing \b would let
+    # the lookahead pass on "may 5%" and strip the figure it exists to keep.
+    rf"\b{_MONTH}\s+{_DAY}\b(?!\s*(?:%|(?:bn|b|billion|m|million|k)\b))",
+]), re.I)
+
+# Models do not restrict themselves to ASCII punctuation. gpt-oss-120b writes
+# ISO dates with U+2011 non-breaking hyphens ("2026‑01‑31"), which the DATE
+# pattern above does not match — so the date survived stripping and its parts
+# were reported as figures tracing to no fact. Normalising the dashes is
+# cheaper and less brittle than teaching every pattern about seven code
+# points, and it only affects what the guard reads, never what the user sees.
+DASHES = dict.fromkeys(
+    map(ord, "‐‑‒–—―−"), "-")
+
+SCALES = {"b": 1e9, "bn": 1e9, "billion": 1e9, "m": 1e6, "million": 1e6, "k": 1e3}
+
+
+def interpretations(tok: str) -> list[float]:
+    """A token can mean several things. Accept if ANY reading matches."""
+    t = tok.strip().replace("$", "").replace(",", "")
+    m = re.match(r"^(\d*\.?\d+)\s*(%|bn|b|billion|m|million|k)?$", t, re.I)
+    if not m:
+        return []
+    v, suf = float(m.group(1)), (m.group(2) or "").lower()
+    if suf == "%":
+        return [v / 100, v]
+    if suf in SCALES:
+        return [v * SCALES[suf]]
+    return [v, v / 100, v * 1e6, v * 1e9]
+
+
+def check(report: str, allowed: dict[int, float]) -> list[dict]:
+    """Return unsupported claims. Empty list means clean."""
+    values = list(allowed.values())
+    problems = []
+    report = report.translate(DASHES)
+
+    for sent in SENTENCE.split(report):
+        cited = [int(i) for i in CITE.findall(sent)]
+        stripped = PROSE_DATE.sub("", DATE.sub("", CITE.sub("", sent)))
+        for tok in NUM.findall(stripped):
+            raw = tok.strip()
+            if not raw or raw in {".", "$"}:
+                continue
+            # ignore years and bare quarter counts
+            bare = raw.replace("$", "").replace(",", "")
+            if re.fullmatch(r"(19|20)\d{2}", bare) or re.fullmatch(r"[1-9]", bare):
+                continue
+            cands = interpretations(raw)
+            if not cands:
+                continue
+            ok = any(
+                abs(c - v) <= max(abs(v) * 0.005, 1e-9)
+                for c in cands for v in values
+            )
+            if not ok:
+                problems.append({"claim": raw, "sentence": sent.strip()[:120],
+                                 "reason": "no matching fact"})
+            elif not cited:
+                problems.append({"claim": raw, "sentence": sent.strip()[:120],
+                                 "reason": "uncited"})
+    return problems

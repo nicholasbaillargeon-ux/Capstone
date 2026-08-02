@@ -1,0 +1,14 @@
+<div class="panel-head">
+  <p class="label">{{ heading }}</p>
+  <span class="chip">{{ elapsed }}</span>
+</div>
+<ol class="rail">
+  {% for s in steps %}
+  <li class="rail-step {{ s.cls }}">
+    <span class="rail-dot" aria-hidden="true"></span>
+    <span class="rail-title">{{ s.title }}</span>
+    <span class="rail-note">{{ s.note }}</span>
+    <span class="rail-ms">{{ s.detail }}</span>
+  </li>
+  {% endfor %}
+</ol>

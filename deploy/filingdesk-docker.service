@@ -1,0 +1,24 @@
+# /etc/systemd/system/filingdesk.service
+#
+# `restart: unless-stopped` in compose already survives reboot. This unit is
+# belt and braces: it gives an ordered start after docker.service, a single
+# `systemctl status filingdesk` for the stack, and a place for the env file.
+[Unit]
+Description=Filing Desk
+Documentation=https://gitea.baillargeon.casa/nick/capstone
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/filingdesk
+EnvironmentFile=/opt/filingdesk/.env
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --force-recreate
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
