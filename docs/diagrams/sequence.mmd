@@ -1,39 +1,72 @@
+%% One question through /ask. The companion component.mmd shows the structure.
+%%
+%% Two things worth reading off this: the refusals happen before any inference,
+%% and the model is called two to four times — once per planning step, once to
+%% draft, once more only if the guard finds something. That call count is where
+%% the latency lives, which is why FD_REASONING_EFFORT is a documented dial.
 sequenceDiagram
     autonumber
-    actor N as Nick
-    participant API as filingdesk-api
-    participant MCP as filingdesk-mcp
+    actor U as User
+    participant API as filingdesk · agent.py
+    participant MCP as mcp_server · stdio
     participant DUCK as filings.duckdb
     participant VEC as vault.db
-    participant LLM as Ollama qwen2.5-7b
+    participant LLM as model endpoint
 
-    N->>API: POST /api/report
-    API->>MCP: fd_resolve_company
-    MCP-->>API: CIK or ambiguity candidates
-    alt ambiguous
-        API-->>N: disambiguation prompt, halt
+    U->>API: POST /api/report · question + ticker
+
+    alt no model configured
+        API-->>U: dashboard-only refusal, stated not warned
     end
-    API->>LLM: plan with tool schemas
-    LLM-->>API: tool_calls
-    API->>MCP: fd_get_concept and fd_compute_metric
-    MCP->>DUCK: SQL over normalized facts
-    DUCK-->>MCP: rows
-    MCP-->>API: typed facts with accession numbers
-    API->>API: compute ratios in Python, record formulas
-    API->>LLM: embed question
-    LLM-->>API: vector
-    API->>VEC: hybrid top-k
-    VEC-->>API: vault passages
-    API->>LLM: draft report, cite every figure by fact id
+
+    API->>API: policy.check_scope — regex, no inference
+    alt advice · market data · forecast
+        API-->>U: typed refusal, model never consulted
+    end
+
+    API->>API: companies.resolve(ticker)
+    alt not an SEC registrant
+        API-->>U: unknown_ticker + closest matches
+    end
+
+    API->>MCP: spawn subprocess, list_tools
+
+    loop planning · up to 4 steps
+        API->>LLM: chat with tool schemas (effort: FD_PLAN_REASONING_EFFORT)
+        LLM-->>API: tool_calls, or none to finish
+        API->>API: toolcall.validate — schema, ticker, arguments
+        alt rejected
+            API->>LLM: rejection reason, retry (max 3)
+        end
+        API->>MCP: fd_get_concept · fd_compute_metric · fd_list_concepts
+        MCP->>DUCK: SQL over normalised facts
+        DUCK-->>MCP: rows
+        MCP->>MCP: series.py dedupe · derive Q4 · metrics.py ratios
+        MCP-->>API: typed facts with accession numbers
+    end
+
+    alt no facts retrieved
+        API-->>U: refusal naming which of the four reasons applied
+    end
+
+    opt notes vault configured and embeddings available
+        API->>LLM: embed question
+        API->>VEC: cosine top-k
+        VEC-->>API: passages — framing only, no figures
+    end
+
+    API->>LLM: draft, every figure needing a fact marker
     LLM-->>API: draft markdown
-    API->>API: grounding guard resolves every citation
-    alt figure not traceable to a fact
-        API->>LLM: repair with offending claims listed
+
+    API->>API: guard.check — each numeral vs retrieved values
+    opt untraceable figure found
+        API->>LLM: repair, offending claims listed
         LLM-->>API: corrected draft
-        API->>API: re-check
+        API->>API: re-check, once only
     end
-    alt still unsupported after one repair
-        API-->>N: report with claims struck and flagged
-    else clean
-        API-->>N: report + fact table + accession links + trace_id
+
+    alt clean
+        API-->>U: answer + fact table + accession numbers + trace_id
+    else still unsupported
+        API-->>U: same, with the offending figures struck and listed
     end

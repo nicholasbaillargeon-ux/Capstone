@@ -354,6 +354,7 @@ Stated plainly, because a demo that hides these is worse than one that doesn't.
 |---|---|
 | [`spec.md`](spec.md) | Problem, constraints, interfaces, criteria, open questions |
 | [`docs/adr/`](docs/adr/) | Two-lane grounding; why two storage engines |
+| [`docs/diagrams/`](docs/diagrams/) | Component and sequence views, in more detail than the diagram above |
 | [`evals/`](evals/) | 15 cases and the harness that grades them |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | What each build day disproved |
 | [`docs/deploy.md`](docs/deploy.md) | Deploy, reboot test, log queries |

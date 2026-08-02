@@ -1,42 +1,63 @@
+%% Structure. The companion sequence.mmd shows one question moving through it.
+%%
+%% The split down the middle is the point: the dashboard lane reaches the data
+%% layer without passing the model, so charts, figures, ratios and provenance
+%% are unaffected by FD_LLM_PROVIDER=none.
 flowchart TB
-    subgraph client["Client"]
+    subgraph clients["Surfaces"]
+        WEB["Dashboard · HTMX + hand-written SVG"]
+        ASK["/ask"]
         CLI["filing CLI"]
-        WEB["HTMX web UI"]
+        API_["JSON API · /api/*"]
     end
 
-    subgraph api["filingdesk-api · FastAPI · systemd unit"]
-        ORCH["Orchestrator<br/>plan / tools / draft"]
-        RET["Retriever<br/>vector + BM25 hybrid"]
-        CALC["Metric calculator<br/>ratios in Python"]
-        GRD["Grounding guard<br/>numeric claim check"]
+    subgraph app["filingdesk · FastAPI · systemd unit or container"]
+        POLICY["policy.py<br/>scope gate — advice · market data · forecast<br/>regex, decided before inference"]
+        COMPANIES["companies.py<br/>ticker to CIK over the SEC registrant list"]
+        AGENT["agent.py<br/>planning loop, max 4 tool steps"]
+        VAULTR["vault.py<br/>cosine over stored embeddings<br/>degrades to no-notes if the endpoint has none"]
+        GUARD["guard.py<br/>every numeral in the draft vs retrieved values<br/>one repair round, then struck and labelled"]
+        PROV["provenance.py<br/>accession numbers, derived-figure notes"]
     end
 
-    subgraph mcp["filingdesk-mcp · self-written · stdio"]
-        TOOLS["fd_resolve_company<br/>fd_get_concept<br/>fd_get_statement<br/>fd_compute_metric<br/>fd_compare_companies<br/>fd_list_filings"]
+    subgraph mcp["filingdesk.mcp_server · stdio subprocess, spawned per request"]
+        TOOLS["fd_resolve_company<br/>fd_list_concepts<br/>fd_get_concept<br/>fd_compute_metric"]
     end
 
-    subgraph data["Local data · no network at request time"]
-        DUCK[("filings.duckdb<br/>+ Parquet")]
-        VDB[("vault.db<br/>sqlite-vec")]
+    subgraph derive["Normalisation · all in Python, never the model"]
+        SERIES["series.py<br/>latest filed wins · YTD cash flow differenced<br/>Q4 derived as FY minus Q1-Q3 and flagged"]
+        METRICS["metrics.py<br/>ratios, with the formula recorded"]
     end
 
-    NORM["Normalizer<br/>tag map · restatements · units"]
-    EDGAR["SEC EDGAR<br/>companyfacts.zip"]
-    VAULT["brain vault<br/>Gitea clone"]
-    OLL["Ollama · CPU<br/>qwen2.5:7b-instruct-q4_K_M<br/>nomic-embed-text"]
+    subgraph data["Local data"]
+        DUCK[("filings.duckdb<br/>normalised XBRL facts")]
+        VDB[("vault.db<br/>sqlite-vec, numpy fallback")]
+    end
 
-    CLI --> ORCH
-    WEB --> ORCH
-    ORCH -->|MCP stdio| mcp
-    ORCH --> RET
-    ORCH --> CALC
-    ORCH --> GRD
-    GRD --> ORCH
-    CALC --> TOOLS
-    RET --> VDB
-    TOOLS --> DUCK
-    EDGAR -->|nightly timer| NORM
-    NORM --> DUCK
-    VAULT -->|nightly timer| VDB
-    ORCH -->|chat + tool calls| OLL
-    RET -->|embed| OLL
+    EDGAR["SEC EDGAR companyfacts<br/>per company, on first use<br/>refreshed when older than FD_FILINGS_TTL_HOURS"]
+    NOTES["Your .md notes · FD_VAULT_DIR<br/>framing only, never figures"]
+    LLM["Model endpoint<br/>OpenAI-compatible — LiteLLM, vLLM, Fireworks…<br/>or local Ollama · optional"]
+
+    WEB --> SERIES
+    API_ --> SERIES
+    ASK --> POLICY
+    CLI --> POLICY
+    POLICY --> COMPANIES
+    COMPANIES --> AGENT
+    AGENT <-->|"MCP over stdio"| TOOLS
+    AGENT --> VAULTR
+    AGENT --> GUARD
+    GUARD --> PROV
+    TOOLS --> SERIES
+    SERIES --> METRICS
+    SERIES --> DUCK
+    EDGAR -->|"on demand, not a timer"| DUCK
+    NOTES -->|"manual: vault.index()"| VDB
+    VAULTR --> VDB
+    AGENT -.->|"plan · draft · repair"| LLM
+    VAULTR -.->|"embed, if configured"| LLM
+
+    classDef model fill:#eef,stroke:#66a,color:#333
+    classDef store fill:#efe,stroke:#6a6,color:#333
+    class LLM model
+    class DUCK,VDB store
