@@ -250,3 +250,176 @@ all unmeasured until `python -m evals.run_evals` runs without `--stub` on the
 homelab.
 
 That run is the last thing standing between this and an honest demo.
+
+---
+
+# Latency findings — the five things worth trying
+
+Five ways to make the answer path faster, each implemented, each measured
+against the eval suite on its own, each kept or thrown away on the number it
+produced. Two worked, one was already true, one is somebody else's flag, and
+one made the app worse in a way the eval suite could not see.
+
+Every run below is 15 cases against gpt-oss-120b on the homelab proxy, at
+`FD_REASONING_EFFORT=medium`, changing one thing at a time. Medians and worst
+cases are over the 12 cases that produce an answer; the 3 refusals never reach
+a model. Reproduce with `python -m evals.compare`.
+
+| | pass | median | worst | planning | draft | blank screen |
+|---|---|---|---|---|---|---|
+| baseline | 15/15 | 29.3s | 108.2s | 14.2s | 17.1s | 17.1s |
+| + streamed draft | 15/15 | 29.4s | 108.3s | 14.5s | 17.2s | **14.5s** |
+| + stop on first facts | 15/15 | **20.0s** | **60.4s** | **4.9s** | 17.2s | 14.5s |
+| + trimmed fact table | **14/15** | 23.4s | 42.1s | 5.0s | 15.1s | 13.6s |
+| shipped, confirmed | 15/15 | 20.0s | 38.2s | 4.9s | 17.2s | 12.9s |
+
+The fourth row is not cumulative. It was measured, rejected, and left off; the
+last row is the suite re-run against what actually ships. **A third off the
+median question, two thirds off the worst, a quarter off the blank screen, and
+the same 15 cases passing.** The draft call is untouched, because nothing here
+could touch it — see below.
+
+## The measurement that reframed the other four
+
+`evals/probe_llm.py` asks the endpoint two questions the eval suite cannot.
+
+**Prefill is not a cost here.** A 1400-word preamble reaches its first chunk
+41 ms later than a four-word one. Getting any request in and out at all costs
+518 ms. So the prompt could be ten times longer and it would not matter, and a
+prefix cache — however perfect — cannot buy back time that is not being spent.
+
+**Generation is the entire cost.** 44.7 tokens/s across the whole generation,
+reasoning included. Every second in the table above is a second of tokens
+coming out one at a time.
+
+Which settles two arguments before they start. Anything that shortens the
+prompt is worthless. Anything that removes a model call, or makes tokens come
+out faster, is worth exactly what it removes.
+
+## 1. Streaming the draft — kept, and honest about what it does
+
+The draft call is last and longest, and until it returned the page had nothing
+on it. It now arrives as it is written.
+
+It changes no total, and it was never going to: the same tokens are generated
+either way. What it changes is the blank screen, and by less than it would
+against most models — **17.1s to 14.5s, a 15% cut** — because gpt-oss reasons
+before it writes. First chunk of *any* kind arrives at 0.5s; first chunk of
+*answer* at 14.5s of a 17.2s call. The model spends 85% of the call thinking.
+
+The tail is where it pays: the worst case emits its first word 32 seconds
+before it finishes (86.5s draft, first word at 54.6s).
+
+Two properties this had to keep, both tested:
+
+- **What is shown unchecked is labelled unchecked.** The partial draft has not
+  been through the guard, so it renders with an "unchecked — no figure traced
+  yet" banner, in a held-back colour, with citation markers left as raw
+  `[[fact:N]]` rather than as traceable chips. A chip is a link to a verified
+  fact and nothing there is verified yet.
+- **The finished report replaces it in the same slot.** Both SSE events swap
+  into one element, so the guarded answer looks like the draft settling rather
+  than a second answer appearing below the first.
+
+One bug found while building it, worth recording because it would have been
+miserable to find later: the draft runs in a worker thread so the SSE heartbeat
+keeps beating, which means `on_stage` is now called from two threads.
+`asyncio.Queue.put_nowait` is not safe from the second one. Hopping every event
+onto the loop with `call_soon_threadsafe` is not the fix either — it reorders
+the finished report ahead of the stage frames that preceded it. The fix is to
+be direct on the loop and scheduled off it, and the absence of a running loop
+is the test for which you are.
+
+## 2. Stopping the planning loop on first facts — kept, and it is the win
+
+Already built as `FD_STOP_ON_FIRST_FACTS`, off pending evidence. The evidence:
+**a third off the median request and nearly half off the worst, no case lost.**
+Planning drops from 14.2s to 4.9s.
+
+What it removes is a round trip whose entire content is the model declining to
+call anything else. At 44.7 tokens/s, "I have what I need" is not free — it is
+several seconds of reasoning tokens, once per question, with somebody watching.
+
+The cost is real and this suite does not price it: a plan that genuinely needs
+a second round of tool calls, decided after seeing the first round's results,
+now gets one round. No case here is multi-hop. Revisit if one is ever added.
+The failure mode is a thin answer rather than a wrong one — the guard still
+checks every figure, and a fact that was never retrieved cannot be cited.
+
+## 3. Prefix caching on the serving backend — nothing to ask for
+
+The reasoning was that every request sends the same system prompt and the same
+four tool schemas, and the planning loop resends its history each step, so most
+of what is sent has been sent before.
+
+All true, and all irrelevant: prefill is 41 ms. Withdrawn.
+
+## 4. Trimming the fact table — rejected, and it is the interesting one
+
+A plan asking for twenty quarters of a ratio returns sixty facts — the ratio
+plus both filed inputs behind each — for a question naming two periods. Cap
+what the DRAFT prompt carries; keep everything in Sources and everything in the
+guard.
+
+`agent.draft_table` does this about as carefully as it can be done. Row numbers
+never move, so `[[fact:41]]` means the same fact trimmed or not. Each concept
+keeps its earliest row and its most recent ones, because "compare the first and
+last quarter" is an eval case and a `[-N:]` slice answers it with the wrong
+quarter. The prompt says outright that the list was truncated and that no
+maximum should be claimed over it.
+
+At a cap of 12 it took two seconds off the draft, nothing off the median
+request, and **H1 from pass to fail** — handed a shorter table the model started
+restating the figures as percentages and wrote two that trace to nothing. The
+guard struck them, which is the system working. The answer was still worse.
+
+**And then the case that matters more passed.**
+
+H5 asks which quarter had the highest gross margin. Untrimmed, the answer is
+0.7835 and it is right. Trimmed, the answer is 0.7500 — cited, grounded,
+checkable, and wrong, because the quarter that was actually highest had been
+cut from the table before the model was asked. Every figure traced to a filing,
+so the grounding check had nothing to say and the case passed.
+
+That is this project's stated failure mode arriving through a latency knob, and
+the harness waved it through. Two things follow.
+
+**A note in a prompt is not a constraint.** The trimmed table says in plain
+words that it is truncated and that a maximum must not be claimed over it. The
+model claimed one anyway, in the same measured tone it uses when it is right.
+
+**The check was too weak, again.** `auto_check` verified that every figure was
+grounded, which is not the same as verifying that the right fact was cited.
+Cases now take an optional `max_of`, and H5 uses it: the answer has to name the
+largest retrieved value of that concept, not merely a real one. It fails with
+the cap on and passes with it off, so the default cannot be turned on by
+accident without the suite saying so.
+
+This is the second time here that a check proving the absence of a specific
+failure passed on rubble. It will not be the last.
+
+The knob stays, defaulted off. It is the right lever for an endpoint with a
+small context window, where the trade has to be made. It is not a lever here.
+
+## 5. Speculative decoding — the only thing left worth asking for
+
+44.7 tokens/s is the binding constraint on every number in the table. A draft
+model against gpt-oss-120b typically returns 1.5–2.5x on decode, and unlike
+everything else tried here it speeds up the reasoning tokens too — which are
+85% of the draft call.
+
+At a conservative 1.5x: the median draft falls 17.2s to 11.5s, first word 14.5s
+to 9.7s, and the planning calls fall by the same factor. Roughly **6 seconds a
+question**, more than anything left in application code.
+
+It is not a change to this repository. It is a flag on whatever serves
+gpt-oss-120b behind the LiteLLM proxy, which is not this host and is not among
+the services the homelab MCP manages — so it is written down here with its
+payoff measured rather than applied.
+
+## What is left
+
+Everything cheap is done. The pipeline now makes two model calls where it made
+three, and shows the second one as it arrives. What remains is 44.7 tokens/s
+and roughly 1,500 tokens of thinking and writing per question — an inference
+problem, not an application one.

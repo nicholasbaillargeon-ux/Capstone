@@ -352,10 +352,14 @@ Stated plainly, because a demo that hides these is worse than one that doesn't.
 - **The grounding guard's number matching is heuristic.** Multiple readings of
   each token with 0.5% tolerance. It rejects fabricated figures reliably in
   testing; it will also occasionally reject a correct one.
-- **Narrated answers are slow and optional.** Median 31s, worst case 70s across
-  the eval suite on a self-hosted gpt-oss-120b, streamed as stages rather than a
-  spinner. Roughly two thirds of that is the planning loop rather than the
-  writing. The dashboard does not use the model at all and is not affected.
+- **Narrated answers are slow and optional.** Median 20s, worst case 38s across
+  the eval suite on a self-hosted gpt-oss-120b. The draft is streamed as it is
+  written and the stages before it are pushed as they land, so the page is never
+  silent — first words at 13s median. Most of that is one model call generating
+  at 45 tokens/s, of which 85% is the model reasoning before it writes; the
+  planning loop is now 5s of it. `docs/FINDINGS.md` has the measurements and
+  what did *not* work. The dashboard does not use the model at all and is not
+  affected.
 - **No tests on retrieval quality itself.** Precision@5 is a stated success
   criterion with no harness behind it yet.
 
@@ -366,7 +370,7 @@ Stated plainly, because a demo that hides these is worse than one that doesn't.
 | [`spec.md`](spec.md) | Problem, constraints, interfaces, criteria, open questions |
 | [`docs/adr/`](docs/adr/) | Two-lane grounding; why two storage engines |
 | [`docs/diagrams/`](docs/diagrams/) | Component and sequence views, in more detail than the diagram above |
-| [`evals/`](evals/) | 15 cases and the harness that grades them |
+| [`evals/`](evals/) | 15 cases, the harness that grades them, `compare.py` for run-to-run deltas, `probe_llm.py` for what the endpoint itself is doing |
 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | What each build day disproved |
 | [`docs/deploy.md`](docs/deploy.md) | Deploy, reboot test, log queries |
 | [`docs/questions.md`](docs/questions.md) | The smoke-test question set |

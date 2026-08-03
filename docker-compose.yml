@@ -39,8 +39,14 @@ services:
       # default endpoint because it serves chat only.
       FD_CHAT_MODEL: ${FD_CHAT_MODEL-}
       FD_EMBED_MODEL: ${FD_EMBED_MODEL-}
-      # Latency/accuracy dial — see config.py for the measured tradeoff.
+      # Latency/accuracy dials — see config.py for the measured tradeoff behind
+      # each, and docs/FINDINGS.md for the runs. Every default here is the one
+      # the eval suite chose; they are listed so a deployment can override one
+      # without reading the source to find out it exists.
       FD_REASONING_EFFORT: ${FD_REASONING_EFFORT-medium}
+      FD_STOP_ON_FIRST_FACTS: ${FD_STOP_ON_FIRST_FACTS-1}
+      FD_STREAM_DRAFT: ${FD_STREAM_DRAFT-1}
+      FD_DRAFT_FACTS_MAX: ${FD_DRAFT_FACTS_MAX-0}
 
     extra_hosts:
       - "host.docker.internal:host-gateway"
