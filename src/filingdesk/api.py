@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import json
 import os
 from html import escape as html_escape
 from urllib.parse import urlencode
@@ -41,6 +40,7 @@ from . import (
     config,
     dashboard,
     db,
+    examples,
     history,
     llm,
     logging_setup,
@@ -62,19 +62,6 @@ if STUB:
 app = FastAPI(title="Filing Desk", version="0.2.0")
 app.mount("/static", StaticFiles(directory=str(web.STATIC)), name="static")
 STARTED = dt.datetime.now(dt.UTC)
-
-_EXAMPLES = [
-    ("NVDA", "How has gross margin moved over the last 8 quarters?"),
-    ("AAPL", "What was net income in the most recent quarter?"),
-    ("MSFT", "How has operating cash flow moved across the series?"),
-]
-
-# hx-vals carries the question straight to /ui/run, so an example is one click
-# rather than fill-then-submit.
-EXAMPLES = [{"ticker": t, "question": q,
-             "vals": json.dumps({"question": q, "ticker": t})}
-            for t, q in _EXAMPLES]
-
 
 class ReportRequest(BaseModel):
     question: str = Field(min_length=3, max_length=500)
@@ -293,7 +280,9 @@ def _page(question: str = "", ticker: str = "NVDA",
         base=config.BASE_PATH,
         model_enabled=config.model_enabled() or STUB,
         universe=companies.count(),
-        examples=EXAMPLES,
+        # Rebuilt per render, not per process: the row is meant to be different
+        # every time the page is loaded.
+        examples=examples.pick(3),
         question=question,
         ticker=ticker,
         result=result,
