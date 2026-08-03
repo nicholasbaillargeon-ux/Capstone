@@ -78,7 +78,8 @@ def test_fact_rows_expose_flags_and_computed():
 
 
 def _landing(**over) -> str:
-    ctx = {"stub": False, "base": "", "app_url": "/", "featured": ["NVDA", "AAPL"],
+    ctx = {"stub": False, "base": "", "app_url": "/app",
+           "featured": ["NVDA", "AAPL"],
            "ready": True, "facts": 423357, "universe": 10432,
            "model_enabled": True, "stack": ["Python"],
            "stats": [{"label": "XBRL FACTS", "value": "423,357",
@@ -90,8 +91,8 @@ def test_landing_links_into_the_running_app():
     """Its CTAs are relative. The page shipped with a LAN address baked in,
     which only works from the machine it was captured on."""
     html = _landing()
-    assert 'href="/?ticker=NVDA"' in html
-    assert 'href="/?ticker=AAPL"' in html
+    assert 'href="/app?ticker=NVDA"' in html
+    assert 'href="/app?ticker=AAPL"' in html
     assert 'href="/ask"' in html
     assert "192.168" not in html
 
@@ -111,7 +112,7 @@ def test_landing_leads_with_the_dashboard_when_there_is_no_model():
     """"Ask a question" as the primary action would advertise the one surface
     that needs a model the instance does not have."""
     html = _landing(model_enabled=False)
-    assert 'class="btn btn-lg" href="/?ticker=NVDA"' in html
+    assert 'class="btn btn-lg" href="/app?ticker=NVDA"' in html
     assert 'href="/ask"' not in html
 
 
@@ -157,7 +158,8 @@ def test_dashboard_urls_carry_the_prefix():
     assert 'href="/filing-desk/static/app.css"' in html
     assert 'src="/filing-desk/static/dashboard.js"' in html
     assert 'href="/filing-desk/ask"' in html
-    assert 'href="/filing-desk/landing"' in html
+    # the wordmark goes back to the landing page, which owns the mount point
+    assert 'href="/filing-desk/"' in html
     # dashboard.js reads this and prefixes every fetch with it.
     assert 'data-base="/filing-desk"' in html
 
@@ -172,9 +174,9 @@ def test_ask_page_urls_carry_the_prefix():
 
 
 def test_landing_urls_carry_the_prefix():
-    html = _landing(base="/filing-desk", app_url="/filing-desk/")
+    html = _landing(base="/filing-desk", app_url="/filing-desk/app")
     assert 'href="/filing-desk/static/landing.css"' in html
-    assert 'href="/filing-desk/?ticker=NVDA"' in html
+    assert 'href="/filing-desk/app?ticker=NVDA"' in html
     assert 'href="/filing-desk/ask"' in html
 
 

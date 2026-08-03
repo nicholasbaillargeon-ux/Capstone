@@ -1,11 +1,17 @@
 """HTTP service.
 
-Two surfaces over one data layer:
+Three surfaces over one data layer:
 
-  /            an interactive dashboard — search any listed company, chart any
+  /            the landing page — what this is, over live counts read from the
+               same place /api/health reads them.
+  /app         an interactive dashboard — search any listed company, chart any
                concept it reports, read every figure back to its filing.
   /ask         the grounded-answer path, where a language model narrates the
                same facts and a deterministic guard strikes anything it made up.
+
+The split is the same one its two sibling apps in the combined showcase use —
+landing at the mount point, dashboard one level under it — so three projects
+behind one proxy answer the same URL shape.
 
 The healthcheck is real: it reports data freshness and whether the model is
 actually reachable, not just 200.
@@ -20,7 +26,12 @@ from html import escape as html_escape
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Query
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -202,7 +213,13 @@ def recent(n: int = 20) -> dict:
 
 # ---- UI ------------------------------------------------------------------
 
-@app.get("/landing", response_class=HTMLResponse)
+@app.get("/landing", include_in_schema=False)
+def landing_moved() -> RedirectResponse:
+    """The landing page briefly lived here before it took the root."""
+    return RedirectResponse(f"{config.BASE_PATH}/", status_code=301)
+
+
+@app.get("/", response_class=HTMLResponse)
 def landing() -> HTMLResponse:
     """The front door.
 
@@ -229,12 +246,12 @@ def landing() -> HTMLResponse:
                   == "openai" else "Ollama"]
     return HTMLResponse(web.render(
         "landing.html", stub=STUB, base=config.BASE_PATH,
-        app_url=f"{config.BASE_PATH}/", featured=config.FEATURED,
+        app_url=f"{config.BASE_PATH}/app", featured=config.FEATURED,
         ready=h["ready"], facts=facts, universe=universe,
         model_enabled=h["model_enabled"], stats=stats, stack=stack))
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/app", response_class=HTMLResponse)
 def index(ticker: str = "NVDA") -> HTMLResponse:
     """The dashboard. All rendering below the shell is client-side, against
     /api/company/{ticker} — the charts are interactive, so the data has to

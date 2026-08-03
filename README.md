@@ -3,13 +3,17 @@
 What public companies actually reported, from SEC filings, where **every figure is
 retrieved from a specific filing and none are generated.**
 
-Two surfaces over one data layer:
+Three surfaces over one data layer:
 
-- **`/` — an interactive dashboard.** Search any of the ~10,400 SEC registrants,
+- **`/` — the landing page.** What this is and what it refuses to do, over live
+  counts read from the running instance rather than written into the page.
+- **`/app` — an interactive dashboard.** Search any of the ~10,400 SEC registrants,
   chart any line item they report, and read every number back to the filing it
   came from. No language model involved.
 - **`/ask` — a grounded answer.** A local LLM narrates the same retrieved facts,
   and a deterministic guard strikes any figure that traces to nothing.
+
+Set `FD_BASE_PATH` to serve all three under a prefix behind a reverse proxy.
 
 Runs on homelab CPU. No GPU, no hosted model. Filings are cached locally; the only
 network call is to SEC EDGAR when a company is loaded or refreshed.
@@ -43,7 +47,7 @@ out against facts that were retrieved before it was asked to write anything.
 
 ```mermaid
 flowchart TB
-    WEB["Dashboard · /<br/>HTMX + hand-written SVG"]
+    WEB["Dashboard · /app<br/>HTMX + hand-written SVG"]
     ASK["Answer · /ask · filing CLI"]
 
     SCOPE{"Scope gate<br/>policy.py · regex, pre-inference"}
@@ -114,7 +118,8 @@ cp .env.example .env && $EDITOR .env
 ./run.sh                                  # ./run.sh 9000 for another port
 ```
 
-Then open **<http://localhost:8088/>** and search for a company. Nothing needs to be
+Then open **<http://localhost:8088/>** and follow it into the dashboard at
+`/app`, where you can search for a company. Nothing needs to be
 seeded first — a company is fetched from EDGAR the first time it is asked for, and
 refreshes itself on later loads once the cached copy is over an hour old.
 
