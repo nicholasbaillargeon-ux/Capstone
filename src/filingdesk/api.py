@@ -63,6 +63,35 @@ app = FastAPI(title="Filing Desk", version="0.2.0")
 app.mount("/static", StaticFiles(directory=str(web.STATIC)), name="static")
 STARTED = dt.datetime.now(dt.UTC)
 
+
+@app.middleware("http")
+async def no_store(request, call_next):
+    """Nothing this app generates may be served from a browser cache.
+
+    Every page here is a claim about right now. The landing page counts the
+    facts currently in the database, the health chip says whether the model is
+    answering, the history panel lists what was just asked, and /ask offers
+    three examples that are supposed to be three different ones each time it
+    is loaded.
+
+    None of those responses carried a single cache header — no Cache-Control,
+    no ETag, no Last-Modified — and a response with no freshness information at
+    all is one a browser is entitled to reuse on its own judgement. It does.
+    The rotating examples looked broken for exactly this reason and curl, which
+    has no cache, could not reproduce it.
+
+    /static is exempt and deliberately so: those URLs carry a hash of the
+    file's bytes (see web.asset), so a changed file is a different URL and
+    there is never a stale one to serve.
+
+    setdefault, not assignment — the SSE endpoint sets its own and knows more
+    about what it needs than this does.
+    """
+    response = await call_next(request)
+    if not request.url.path.startswith("/static"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 class ReportRequest(BaseModel):
     question: str = Field(min_length=3, max_length=500)
     ticker: str = Field(default="NVDA", max_length=8)

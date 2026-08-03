@@ -29,6 +29,27 @@ def test_every_page_renders(client, path):
     assert r.text.lstrip().startswith("<!doctype html>")
 
 
+@pytest.mark.parametrize(
+    "path", ["/", "/ask", "/api/health", "/api/health/html", "/api/history/html"])
+def test_generated_pages_are_never_served_from_cache(client, path):
+    """Each of these is a claim about right now — the fact count, whether the
+    model is answering, what was just asked, which three examples to try. They
+    carried no cache headers at all, and a response with no freshness
+    information is one the browser may reuse on its own judgement. It did: the
+    rotating examples on /ask looked frozen in a browser and fine under curl,
+    which has no cache."""
+    assert client.get(path).headers["cache-control"] == "no-store"
+
+
+def test_static_assets_stay_cacheable(client):
+    """Their URLs carry a hash of the file's bytes, so a changed file is a
+    different URL. Telling the browser not to keep them would re-download the
+    stylesheet on every page load to no purpose."""
+    r = client.get("/static/app.css")
+    assert r.status_code == 200
+    assert r.headers.get("cache-control") != "no-store"
+
+
 def test_health_answers_and_names_the_endpoint(client):
     h = client.get("/api/health").json()
     assert h["endpoint"] == config.LLM_BASE_URL
