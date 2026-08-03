@@ -37,6 +37,16 @@ CASES = [
          q="How has revenue moved across the series?",
          note="Second concept, same shape as H1."),
 
+    dict(id="H7", ticker="INTC", kind="report", facts_min=4,
+         q="How has operating margin moved across the series?",
+         note="A company with losses in the window, and the only case here "
+              "that is not NVDA. Every other question asks about a company "
+              "that has been profitable throughout, which is how the guard "
+              "came to strike the sign off every negative figure and nothing "
+              "noticed — three correct figures crossed out in a four-sentence "
+              "answer. If Intel returns to profit this stops exercising the "
+              "path; tests/test_guard_dates.py checks it deterministically."),
+
     # ---- edge cases -------------------------------------------------
     dict(id="E1", ticker="NVDA", kind="report", facts_min=4,
          must=["derived"],
@@ -77,5 +87,11 @@ CASES = [
               "unchanged: a company-level refusal must name its own reason."),
 ]
 
-assert len(CASES) == 15
+assert len(CASES) == 16
 assert sum(c["kind"] == "refuse" for c in CASES) >= 3
+# Every question but H7 asks about NVDA, and that came within an inch of being
+# a hole nothing could see: one profitable company means no negative figure
+# ever reaches the guard, and the guard was silently discarding the sign on
+# every one of them. Whatever else this suite grows, it must keep asking about
+# a company whose numbers go the other way.
+assert len({c["ticker"] for c in CASES}) >= 2

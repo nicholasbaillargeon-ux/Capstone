@@ -102,3 +102,60 @@ def test_a_day_that_is_also_a_real_figure_still_needs_its_citation():
     on its own merits."""
     problems = guard.check("The ratio was 31.", {1: 12.0})
     assert [p["claim"] for p in problems] == ["31"]
+
+
+# ---- losses ---------------------------------------------------------------
+# A company that loses money files a negative figure, and the guard read the
+# sign off every one of them. "‑0.0238" was extracted as 0.0238, compared
+# against a fact worth -0.0238, and struck — a number the model had quoted
+# exactly right, crossed out in front of the reader.
+#
+# Found by running the /ask page's own example questions rather than the eval
+# suite, which asks about one company that has been profitable throughout. It
+# fired on Intel's operating margin: three struck figures in a four-sentence
+# answer, all three correct.
+
+LOSSES = {1: -0.0238, 2: -0.2470, 3: 0.0289, 4: -2.5e9}
+
+
+@pytest.mark.parametrize("sent", [
+    "Operating margin fell to -0.0238[[fact:1]] in the period.",
+    "Operating margin fell to ‑0.0238[[fact:1]] in the period.",   # U+2011
+    "Operating margin fell to −0.0238[[fact:1]] in the period.",   # U+2212
+    "It went from -0.0238[[fact:1]] to -0.2470[[fact:2]].",
+    "Free cash flow was -2.5 billion[[fact:4]] for the quarter.",
+])
+def test_a_correctly_quoted_loss_is_not_struck(sent):
+    assert guard.check(sent, LOSSES) == []
+
+
+def test_a_loss_written_in_words_still_passes():
+    """"a loss of 2.38%" puts the sign in the word and not on the number. That
+    is ordinary prose and the figure is right, so an unsigned token is allowed
+    to match a negative fact."""
+    assert guard.check(
+        "The period showed a loss of 0.0238[[fact:1]].", LOSSES) == []
+
+
+def test_writing_the_wrong_sign_is_still_caught():
+    """The reason the sign is read rather than discarded. Quoting a loss as a
+    profit is the exact class of error this module exists to catch, and it is
+    worse than a fabricated figure because it reconciles."""
+    problems = guard.check("Margin was -0.0238[[fact:1]].", {1: 0.0238})
+    assert [p["claim"] for p in problems] == ["-0.0238"]
+
+
+def test_a_fabricated_negative_is_caught():
+    problems = guard.check("Margin was -0.9999[[fact:1]].", LOSSES)
+    assert [p["claim"] for p in problems] == ["-0.9999"]
+
+
+@pytest.mark.parametrize("sent", [
+    "Across 2024-2025 the margin held at 0.0289[[fact:3]].",
+    "Between 2019-2024 it stayed at 0.0289[[fact:3]].",
+])
+def test_a_span_of_years_is_not_a_negative_figure(sent):
+    """The hyphen in a range is not a minus. Reading it as one would turn the
+    second year into a figure tracing to nothing, and every answer that writes
+    a date range would come back dirty."""
+    assert guard.check(sent, LOSSES) == []

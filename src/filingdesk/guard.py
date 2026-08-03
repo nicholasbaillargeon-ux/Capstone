@@ -27,8 +27,21 @@ import re
 # fails an eval case for a claim nobody wrote. Any word beginning b/m/k does
 # it: "but", "more", "known". The boundary is on the word branches only; there
 # is no word boundary after "%", so a shared \b would break every percentage.
+# The leading sign is not optional decoration: a company with a loss files a
+# negative figure, and without this the guard read "‑0.0238" as 0.0238, failed
+# to match it against a fact worth -0.0238, and struck a number the model had
+# quoted exactly right. Every loss-making period in every company was affected
+# — operating margin, net margin, net income, free cash flow, EPS — and the
+# eval suite never caught it because all 15 cases ask about one profitable
+# company.
+#
+# The lookbehind is what keeps the sign from being stolen out of a range or a
+# span of years: in "2024-2025" and "quarters 8-12" the hyphen follows a word
+# character and is not a minus. `)` is excluded too, so ")-3" does not read as
+# negative three, while "(-0.25)" still does.
 NUM = re.compile(
-    r"\$?\d[\d,]*(?:\.\d+)?\s*(?:%|(?:billion|bn|b|million|m|k)\b)?", re.I)
+    r"(?<![\w)])-?\$?\d[\d,]*(?:\.\d+)?\s*(?:%|(?:billion|bn|b|million|m|k)\b)?",
+    re.I)
 CITE = re.compile(r"\[\[fact:(\d+)\]\]")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -79,17 +92,41 @@ SCALES = {"b": 1e9, "bn": 1e9, "billion": 1e9, "m": 1e6, "million": 1e6, "k": 1e
 
 
 def interpretations(tok: str) -> list[float]:
-    """A token can mean several things. Accept if ANY reading matches."""
+    """A token can mean several things. Accept if ANY reading matches.
+
+    The sign is read where the model wrote one and left open where it did not,
+    which is not symmetry for its own sake:
+
+    A figure written "-0.0238" is a claim that the period was a loss, and it
+    should match a fact worth -0.0238 and *not* one worth 0.0238. Writing the
+    wrong sign turns a loss into a profit, which is exactly the class of error
+    this module exists to catch.
+
+    A figure written "0.0238" carries no such claim — "a loss of 2.4%" is how
+    the number is normally written in prose, with the sign in the word. So an
+    unsigned token is allowed to match either, on the same reasoning that lets
+    it match 0.739 or 73.9% or $45,079M: the token is ambiguous and any
+    reading of it may be the intended one.
+    """
     t = tok.strip().replace("$", "").replace(",", "")
-    m = re.match(r"^(\d*\.?\d+)\s*(%|bn|b|billion|m|million|k)?$", t, re.I)
+    m = re.match(r"^(-?)(\d*\.?\d+)\s*(%|bn|b|billion|m|million|k)?$", t, re.I)
     if not m:
         return []
-    v, suf = float(m.group(1)), (m.group(2) or "").lower()
+    signed = m.group(1) == "-"
+    sign = -1.0 if signed else 1.0
+    v, suf = float(m.group(2)), (m.group(3) or "").lower()
+
     if suf == "%":
-        return [v / 100, v]
-    if suf in SCALES:
-        return [v * SCALES[suf]]
-    return [v, v / 100, v * 1e6, v * 1e9]
+        base = [v / 100, v]
+    elif suf in SCALES:
+        base = [v * SCALES[suf]]
+    else:
+        base = [v, v / 100, v * 1e6, v * 1e9]
+
+    out = [sign * c for c in base]
+    if not signed:
+        out += [-c for c in base]
+    return out
 
 
 def check(report: str, allowed: dict[int, float]) -> list[dict]:
@@ -106,7 +143,10 @@ def check(report: str, allowed: dict[int, float]) -> list[dict]:
             if not raw or raw in {".", "$"}:
                 continue
             # ignore years and bare quarter counts
-            bare = raw.replace("$", "").replace(",", "")
+            # The sign comes off before these two: "-2025" is still a year and
+            # "-3" is still a bare count, and leaving the minus on would send
+            # both down the matching path they are excluded from.
+            bare = raw.replace("$", "").replace(",", "").lstrip("-")
             if re.fullmatch(r"(19|20)\d{2}", bare) or re.fullmatch(r"[1-9]", bare):
                 continue
             cands = interpretations(raw)
