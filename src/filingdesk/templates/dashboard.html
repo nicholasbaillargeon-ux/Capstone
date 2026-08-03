@@ -8,6 +8,7 @@
 {# Not deferred: the saved theme must be stamped on <html> before first
    paint, or dark-mode users get a light flash on every load. #}
 <script src="{{ asset('theme.js') }}"></script>
+<script src="{{ asset('combobox.js') }}" defer></script>
 <script src="{{ asset('charts.js') }}" defer></script>
 <script src="{{ asset('dashboard.js') }}" defer></script>
 </head>

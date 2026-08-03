@@ -834,6 +834,15 @@ tbody tr:target .col-id { font-weight: 700; }
   background: var(--paper);
 }
 .ask .field-q input { font-family: var(--sans); }
+
+/* The company field is a search box now, not a four-character symbol. Wide
+   enough to type "berkshire" into, and its results panel is wider still —
+   company names are long and the field should not decide how much of one you
+   can read. */
+.ask .field-ticker { width: 190px; }
+.ask .field-ticker .results { min-width: 340px; }
+.ask .combo input { border-radius: 8px; padding: 11px 13px; font-size: 14.5px;
+  font-family: var(--mono); background: var(--paper); }
 .ask .field input:hover:not(:disabled) { border-color: var(--accent); }
 .ask .field input:disabled { opacity: 0.55; cursor: not-allowed; }
 

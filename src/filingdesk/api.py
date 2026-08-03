@@ -264,6 +264,27 @@ def index(ticker: str = "NVDA") -> HTMLResponse:
         featured=config.FEATURED, universe=companies.count()))
 
 
+def as_ticker(raw: str) -> str:
+    """What the company field submitted -> a ticker.
+
+    The field is a type-ahead now, and picking a suggestion writes the symbol
+    back into it. Nothing forces a pick, though: "berkshire" and Enter is a
+    reasonable thing to do, and so is typing a name with JavaScript off. Both
+    used to reach the agent verbatim and come back "that symbol is not in the
+    SEC's registrant list", which is true and useless.
+
+    A symbol that resolves is taken as-is. Anything else goes through the same
+    ranked search the dropdown uses and takes its top hit — the row the user
+    would have clicked. If that finds nothing, the input is returned unchanged
+    so the refusal still names what was actually asked for.
+    """
+    t = (raw or "").strip().upper()
+    if not t or companies.resolve(t):
+        return t
+    hits = companies.search(t, 1)
+    return hits[0]["ticker"] if hits else t
+
+
 def _page(question: str = "", ticker: str = "NVDA",
           result: dict | None = None) -> str:
     return web.render(
@@ -271,6 +292,7 @@ def _page(question: str = "", ticker: str = "NVDA",
         stub=STUB,
         base=config.BASE_PATH,
         model_enabled=config.model_enabled() or STUB,
+        universe=companies.count(),
         examples=EXAMPLES,
         question=question,
         ticker=ticker,
@@ -295,14 +317,15 @@ def ui_config() -> dict:
 @app.post("/report", response_class=HTMLResponse)
 async def report_form(question: str = Form(...), ticker: str = Form("NVDA")):
     """No-JavaScript path: run it, render the finished page. No streaming."""
-    result = await agent.run(question.strip(), ticker.strip().upper())
-    return HTMLResponse(_page(question=question, ticker=ticker, result=result))
+    t = as_ticker(ticker)
+    result = await agent.run(question.strip(), t)
+    return HTMLResponse(_page(question=question, ticker=t, result=result))
 
 
 @app.get("/ui/run", response_class=HTMLResponse)
 def ui_run(question: str, ticker: str = "NVDA") -> HTMLResponse:
     """Hand htmx the SSE shell. The stream itself does the work."""
-    q, t = question.strip(), ticker.strip().upper()
+    q, t = question.strip(), as_ticker(ticker)
     url = (f"{config.BASE_PATH}/api/report/stream?"
            + urlencode({"question": q, "ticker": t}))
     return HTMLResponse(web.render(

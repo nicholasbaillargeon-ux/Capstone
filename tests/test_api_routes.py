@@ -78,3 +78,24 @@ def test_the_stylesheet_asks_for_fonts_relative_to_itself(client):
     css = client.get("/static/landing.css").text
     assert 'url("fonts/' in css
     assert 'url("/static/fonts/' not in css   # the comment above it may say so
+
+
+# ---- the company field takes a name as well as a symbol ------------------
+
+@pytest.mark.parametrize("typed,expect", [
+    ("NVDA", "NVDA"),        # a symbol is taken as-is
+    ("nvda", "NVDA"),
+    ("nvidia", "NVDA"),      # a name goes through the dropdown's own search
+    ("", ""),                # nothing typed is the form's problem, not ours
+])
+def test_a_typed_company_name_resolves_to_its_ticker(typed, expect):
+    """Enter without picking a suggestion, or JavaScript off entirely, used to
+    send the raw text to the agent and get back "that symbol is not in the
+    SEC's registrant list"."""
+    assert api.as_ticker(typed) == expect
+
+
+def test_an_unknown_string_is_left_alone():
+    """So the refusal quotes what was actually asked for, rather than the
+    nearest company to a typo."""
+    assert api.as_ticker("zzzqqq") == "ZZZQQQ"

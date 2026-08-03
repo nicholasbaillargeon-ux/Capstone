@@ -74,68 +74,24 @@
   setInterval(health, 30000);
 
   /* ---- company search --------------------------------------------- */
-  const input = $("#q"), results = $("#results");
-  let searchTimer = null, hits = [], active = -1;
-
-  function closeResults() {
-    results.hidden = true;
-    input.setAttribute("aria-expanded", "false");
-    active = -1;
-  }
-
-  function renderResults() {
-    results.replaceChildren();
-    hits.forEach(function (h, i) {
-      const li = document.createElement("li");
-      li.role = "option";
-      li.className = "result" + (i === active ? " is-active" : "");
-      li.setAttribute("aria-selected", i === active ? "true" : "false");
-      const t = document.createElement("b");
-      t.textContent = h.ticker;
-      const n = document.createElement("span");
-      n.textContent = h.name;                       // untrusted -> textContent
-      li.append(t, n);
-      li.addEventListener("mousedown", function (ev) {
-        ev.preventDefault();
-        pick(h.ticker);
-      });
-      results.appendChild(li);
-    });
-    results.hidden = !hits.length;
-    input.setAttribute("aria-expanded", hits.length ? "true" : "false");
-  }
-
-  function pick(ticker) {
-    state.ticker = ticker;
-    state.concept = "Revenues";
-    input.value = "";
-    closeResults();
-    load();
-  }
-
-  input.addEventListener("input", function () {
-    clearTimeout(searchTimer);
-    const q = input.value.trim();
-    if (!q) { hits = []; renderResults(); return; }
-    searchTimer = setTimeout(function () {
-      fetch(BASE + "/api/companies/search?q=" + encodeURIComponent(q) + "&limit=10")
-        .then(r => r.json())
-        .then(function (j) { hits = j.results || []; active = -1; renderResults(); })
-        .catch(() => {});
-    }, 130);
+  /* The type-ahead itself is combobox.js, shared with the ask page. Here a
+   * pick loads the company; the box empties, because the dashboard shows what
+   * it loaded rather than what was typed to find it. */
+  FDCombobox({
+    input: $("#q"), list: $("#results"), base: BASE, clearOnPick: true,
+    onPick: function (ticker) {
+      state.ticker = ticker;
+      state.concept = "Revenues";
+      load();
+    },
   });
-
-  input.addEventListener("keydown", function (ev) {
-    if (results.hidden) return;
-    if (ev.key === "ArrowDown") { active = Math.min(active + 1, hits.length - 1); renderResults(); ev.preventDefault(); }
-    else if (ev.key === "ArrowUp") { active = Math.max(active - 1, 0); renderResults(); ev.preventDefault(); }
-    else if (ev.key === "Enter" && active >= 0) { pick(hits[active].ticker); ev.preventDefault(); }
-    else if (ev.key === "Escape") closeResults();
-  });
-  input.addEventListener("blur", () => setTimeout(closeResults, 120));
 
   document.querySelectorAll("[data-jump]").forEach(function (b) {
-    b.addEventListener("click", () => pick(b.dataset.jump));
+    b.addEventListener("click", function () {
+      state.ticker = b.dataset.jump;
+      state.concept = "Revenues";
+      load();
+    });
   });
 
   /* ---- filters ----------------------------------------------------- */

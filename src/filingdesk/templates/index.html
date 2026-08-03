@@ -7,10 +7,12 @@
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 {# Not deferred — the saved theme is stamped before first paint. #}
 <script src="{{ asset('theme.js') }}"></script>
+<script src="{{ asset('combobox.js') }}" defer></script>
+<script src="{{ asset('ask.js') }}" defer></script>
 <script src="{{ asset('htmx.min.js') }}"></script>
 <script src="{{ asset('htmx-ext-sse.js') }}"></script>
 </head>
-<body>
+<body data-base="{{ base }}">
 <div class="page">
 
   {% if stub %}
@@ -80,10 +82,22 @@
   <form class="ask" action="{{ base }}/report" method="post"
         hx-get="{{ base }}/ui/run" hx-target="#run" hx-swap="innerHTML">
     <div class="ask-row">
+      {# The same type-ahead the dashboard uses, over every SEC registrant
+         rather than a list of favourites. It is still the field the form
+         posts, so a pick writes the TICKER back into it — and with
+         JavaScript off it stays exactly what it was, a text input you type a
+         symbol into. #}
       <label class="field field-ticker">
-        <span class="label">Ticker</span>
-        <input name="ticker" value="{{ ticker or 'NVDA' }}" maxlength="8"
-               autocomplete="off" spellcheck="false" required>
+        <span class="label" for="ask-ticker">Company</span>
+        <div class="combo">
+          <input id="ask-ticker" name="ticker" value="{{ ticker or 'NVDA' }}"
+                 maxlength="64" autocomplete="off" spellcheck="false" required
+                 role="combobox" aria-expanded="false" aria-controls="ask-results"
+                 aria-autocomplete="list"
+                 placeholder="Ticker or name"
+                 title="Search {{ '{:,}'.format(universe) }} SEC filers by ticker or company name">
+          <ul id="ask-results" class="results" role="listbox" hidden></ul>
+        </div>
       </label>
       <label class="field field-q">
         <span class="label">Question</span>

@@ -173,13 +173,29 @@ def test_dashboard_urls_carry_the_prefix(mounted):
     assert 'data-base="/filing-desk"' in html
 
 
-def test_ask_page_urls_carry_the_prefix():
+def test_ask_page_urls_carry_the_prefix(mounted):
     html = web.render("index.html", base="/filing-desk", stub=False,
                       model_enabled=True, examples=[], question="",
-                      ticker="NVDA", result=None, report_fragment="")
+                      ticker="NVDA", result=None, report_fragment="",
+                      universe=10432)
     assert 'hx-get="/filing-desk/ui/run"' in html
     assert 'hx-get="/filing-desk/api/history/html"' in html
     assert 'action="/filing-desk/report"' in html
+    assert "/filing-desk/static/combobox.js?v=" in html
+
+
+def test_the_ask_form_searches_every_registrant_and_still_posts_a_ticker():
+    """The company field is a type-ahead over all ~10,400 filers, but it is
+    also the input the form submits — so it keeps its name and its value, and
+    with JavaScript off it is the plain text box it always was."""
+    html = web.render("index.html", base="", stub=False, model_enabled=True,
+                      examples=[], question="", ticker="NVDA", result=None,
+                      report_fragment="", universe=10432)
+    assert 'name="ticker"' in html and 'value="NVDA"' in html
+    assert 'role="combobox"' in html
+    assert 'aria-controls="ask-results"' in html
+    assert '<ul id="ask-results" class="results" role="listbox" hidden>' in html
+    assert "10,432 SEC filers" in html
 
 
 def test_the_way_out_appears_only_when_something_owns_the_root():
