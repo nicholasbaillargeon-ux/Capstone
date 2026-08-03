@@ -53,9 +53,10 @@ def prefix(n_words: int, salt: str) -> str:
     return f"[{salt}] " + FILLER * reps
 
 
-def timed_stream(messages: list[dict], max_tokens: int = 24) -> dict:
+def timed_stream(messages: list[dict], max_tokens: int = 24,
+                 model: str | None = None) -> dict:
     """One streamed call, timed. Returns first-chunk, first-text and total."""
-    body = {"model": config.CHAT_MODEL, "messages": messages,
+    body = {"model": model or config.CHAT_MODEL, "messages": messages,
             "temperature": 0, "stream": True, "max_tokens": max_tokens,
             "stream_options": {"include_usage": True}}
     if config.REASONING_EFFORT:
@@ -152,7 +153,8 @@ DRAFT_MEDIAN_S = 17.2
 DRAFT_TTFT_MEDIAN_S = 12.9
 
 
-def probe_decode_rate(samples: int = 3, want: int = 400) -> None:
+def probe_decode_rate(samples: int = 3, want: int = 400,
+                      model: str | None = None) -> float | None:
     """Tokens per second across the WHOLE generation, reasoning included.
 
     The obvious version of this measurement is wrong in a way that flatters the
@@ -164,14 +166,15 @@ def probe_decode_rate(samples: int = 3, want: int = 400) -> None:
     Generation starts at the first chunk of any kind, so that is where the
     clock starts.
     """
-    print(f"\ndecode rate — up to {want} tokens, {samples} samples")
+    name = model or config.CHAT_MODEL
+    print(f"\ndecode rate — {name}, up to {want} tokens, {samples} samples")
     rates, splits = [], []
     for i in range(samples):
         res = timed_stream(
             [{"role": "user", "content":
               "Name three things a 10-Q contains and say why each matters. "
               f"Run {i}."}],
-            max_tokens=want)
+            max_tokens=want, model=model)
         u = res.get("usage") or {}
         out = u.get("completion_tokens")
         if not out:
@@ -185,7 +188,7 @@ def probe_decode_rate(samples: int = 3, want: int = 400) -> None:
             rates.append(out / span)
     if not rates:
         print("  could not measure")
-        return
+        return None
     rate = st.median(rates)
     print(f"  {rate:.1f} tokens/s across the whole generation")
     if splits:
@@ -193,14 +196,69 @@ def probe_decode_rate(samples: int = 3, want: int = 400) -> None:
             s[1] for s in splits)
         print(f"  {think:.0f} of {total:.0f} tokens were reasoning "
               f"({think / total * 100:.0f}%) — spent before the first word")
-    print(f"  the suite's median draft call is {DRAFT_MEDIAN_S:.1f}s, of which "
-          f"{DRAFT_TTFT_MEDIAN_S:.1f}s is before the first word")
-    for factor, name in ((1.5, "conservative"), (2.2, "optimistic")):
-        print(f"  -> speculative decoding at {factor}x ({name}): draft "
-              f"{DRAFT_MEDIAN_S / factor:.1f}s, first word at "
-              f"{DRAFT_TTFT_MEDIAN_S / factor:.1f}s "
-              f"(-{DRAFT_MEDIAN_S - DRAFT_MEDIAN_S / factor:.1f}s a question, "
-              "and the planning calls speed up by the same factor)")
+    return rate
+
+
+# A smaller sibling of the chat model, served by the same endpoint, which is
+# what a draft model for speculative decoding would have to be: same tokenizer,
+# much cheaper per token. Empty to skip the check.
+DRAFT_MODEL = "gpt-oss-20b"
+
+
+def probe_speculative(target_rate: float | None) -> None:
+    """Would a draft model actually pay for itself here?
+
+    Speculative decoding rests on one assumption: the draft model is several
+    times cheaper per token than the target, so guessing k tokens and having
+    the target check them in one pass beats generating k tokens with the
+    target. Every "1.5x to 2.5x" quoted for it assumes that holds.
+
+    It is an assumption, and it is measurable from out here, so it should be
+    measured before anyone is asked to change a flag on another machine. If
+    the draft costs the same per token as the target, the arithmetic inverts
+    and speculation is slower than not speculating at whatever acceptance rate
+    you are realistically going to get.
+
+    The table is Leviathan et al.'s expected speedup: with acceptance rate a
+    and k drafted tokens, one verify pass yields (1 - a^(k+1))/(1 - a) tokens
+    on average and costs one target step plus k draft steps.
+    """
+    if not DRAFT_MODEL or not target_rate:
+        return
+    draft_rate = probe_decode_rate(model=DRAFT_MODEL)
+    if not draft_rate:
+        return
+
+    cost = target_rate / draft_rate   # draft steps priced in target steps
+    print(f"\nspeculative decoding — {DRAFT_MODEL} drafting for "
+          f"{config.CHAT_MODEL}")
+    print(f"  the draft model costs {cost:.2f} target-steps per token")
+    if cost > 0.5:
+        print("  it is supposed to cost a small fraction of one. As served on "
+              "this endpoint it does not, so the premise does not hold here.")
+    print("\n  expected speedup, by how often the target accepts a draft token")
+    print("  accept    k=3     k=5     k=8")
+    best = 0.0
+    for a in (0.5, 0.6, 0.7, 0.8, 0.9):
+        row = []
+        for k in (3, 5, 8):
+            gain = (1 - a ** (k + 1)) / (1 - a)
+            speedup = gain / (1 + k * cost)
+            best = max(best, speedup)
+            row.append(f"{speedup:5.2f}x")
+        print(f"   {a:.0%}     " + "  ".join(row))
+    if best <= 1.0:
+        print("\n  -> net negative everywhere in that range. On these two "
+              "models as served, speculation would make the app slower.")
+    else:
+        print(f"\n  -> worth up to {best:.2f}x, at the top of that range. "
+              f"The suite's median draft call would fall from "
+              f"{DRAFT_MEDIAN_S:.1f}s to {DRAFT_MEDIAN_S / best:.1f}s.")
+    print("  Caveat this cannot see past: the draft model is measured as a "
+          "separately served endpoint, sharing whatever the target shares. "
+          "Loaded as a draft inside the target's own process it may be "
+          "cheaper than it looks here — which is a measurement to take ON "
+          "that host, not from this one.")
 
 
 def main() -> None:
@@ -208,7 +266,7 @@ def main() -> None:
         raise SystemExit(llm.NO_MODEL)
     print(f"endpoint: {config.LLM_BASE_URL}\nmodel   : {config.CHAT_MODEL}")
     probe_prefix_reuse()
-    probe_decode_rate()
+    probe_speculative(probe_decode_rate())
     print()
 
 

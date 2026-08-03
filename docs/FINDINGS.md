@@ -401,25 +401,75 @@ failure passed on rubble. It will not be the last.
 The knob stays, defaulted off. It is the right lever for an endpoint with a
 small context window, where the trade has to be made. It is not a lever here.
 
-## 5. Speculative decoding — the only thing left worth asking for
+## 5. Speculative decoding — asked for, then measured, and withdrawn
+
+**This section first said "roughly 6 seconds a question, more than anything
+left in application code". That was a quoted industry range, not a
+measurement, and measuring it turned it over.**
 
 44.7 tokens/s is the binding constraint on every number in the table. A draft
-model against gpt-oss-120b typically returns 1.5–2.5x on decode, and unlike
-everything else tried here it speeds up the reasoning tokens too — which are
-85% of the draft call.
+model against a 120B typically returns 1.5–2.5x, and unlike anything else tried
+here it would speed up the reasoning tokens too, which are 85% of the draft
+call. So: ask the homelab to load a draft model. The proxy already serves
+gpt-oss-20b, same family, same tokenizer — the obvious candidate, sitting right
+there.
 
-At a conservative 1.5x: the median draft falls 17.2s to 11.5s, first word 14.5s
-to 9.7s, and the planning calls fall by the same factor. Roughly **6 seconds a
-question**, more than anything left in application code.
+Then `probe_llm.py` grew a measurement of it, and gpt-oss-20b decodes at
+**44.7 tokens/s. The same rate as the 120b, to within the noise, repeatedly.**
 
-It is not a change to this repository. It is a flag on whatever serves
-gpt-oss-120b behind the LiteLLM proxy, which is not this host and is not among
-the services the homelab MCP manages — so it is written down here with its
-payoff measured rather than applied.
+Speculative decoding rests on exactly one assumption: the draft is several
+times cheaper per token than the target, so guessing k tokens and checking them
+in one target pass beats generating k with the target. Every quoted speedup
+assumes it. Priced against each other as served here, the draft costs 1.00
+target-steps per token, and the arithmetic inverts:
+
+| accept | k=3 | k=5 | k=8 |
+|---|---|---|---|
+| 50% | 0.47x | 0.33x | 0.22x |
+| 70% | 0.63x | 0.49x | 0.36x |
+| 90% | 0.86x | 0.78x | 0.68x |
+
+Net negative everywhere in that range. Turning it on would make the app slower.
+
+Three checks before believing that, because "two different models are exactly
+the same speed" is the shape of a broken measurement:
+
+- **It is not the transport.** mistral-small-3.2-vision on the same endpoint,
+  same code path, decodes at 7.8 tokens/s with 124 ms between chunks against
+  the gpt-oss pair's 23 ms. Nothing is pacing the stream.
+- **It is not one model wearing two names.** The proxy echoes back whichever
+  name was requested, so that proves nothing — but the completion ids come back
+  `chatcmpl-2` and `chatcmpl-256`, two independent sequential counters, so
+  there are two server processes.
+- **It reproduces.** Three samples per model per run, several runs, 44.6–44.9
+  every time.
+
+The likely reading is that both are MoE with small active parameter counts
+(~5.1B against ~3.6B) and that per-token time on this hardware is dominated by
+something that does not scale with the model — in which case the 120b is
+already generating about as fast as anything of its family will on that box.
+
+What this cannot see: the 20b is measured as a *separately served endpoint*,
+sharing whatever the target shares. Loaded as a draft inside the target's own
+process it might be cheaper than it looks from out here. That is a measurement
+to take on that host, not from this one — and it is the measurement to take
+before changing any flag, rather than after.
+
+So the recommendation is not "enable speculative decoding". It is: **measure
+the draft model in isolation on the serving host first**, because from the
+client side its central assumption is already failing.
 
 ## What is left
 
-Everything cheap is done. The pipeline now makes two model calls where it made
-three, and shows the second one as it arrives. What remains is 44.7 tokens/s
-and roughly 1,500 tokens of thinking and writing per question — an inference
-problem, not an application one.
+Everything cheap is done, and the one expensive thing left turned out not to be
+worth doing on this hardware. The pipeline makes two model calls where it made
+three and shows the second as it arrives; what remains is 44.7 tokens/s and
+roughly 1,500 tokens of thinking and writing per question.
+
+That is an inference problem, and the levers on it are all on the other machine
+and all bigger than a flag: different hardware, a smaller model for the
+planning call, or fewer reasoning tokens. `FD_PLAN_CHAT_MODEL` already exists
+for the middle one and has never been measured — gpt-oss-20b is served, it is
+apparently no slower, and choosing between four tools is a smaller job than
+transcribing figures. That is the next experiment, and it is one this
+repository can run by itself.
