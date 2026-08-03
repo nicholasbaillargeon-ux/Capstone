@@ -36,6 +36,12 @@ Every number you write MUST be immediately followed by its citation marker
 in the form [[fact:N]]. A sentence containing a number with no marker is a
 failure. Do not compute new numbers. Do not round beyond one decimal place.
 
+A claim about what the facts show carries a citation too, even when it names
+no number and even when the answer is "no". "No quarter in this series is
+marked restated [[fact:1]][[fact:20]]" points at what was checked; the same
+sentence without markers is an assertion the reader has no way to verify.
+Cite the facts you read to reach the answer.
+
 QUESTION
 {question}
 
