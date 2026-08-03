@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filing Desk — what public companies actually reported</title>
+<meta name="description" content="Answers about public companies drawn from
+      SEC XBRL filings. Every figure is retrieved from a specific filing and
+      every ratio computed in Python — none are generated.">
+<link rel="stylesheet" href="/static/landing.css">
+</head>
+<body>
+
+{% if stub %}
+<div class="stub">
+  <div class="wrap">
+    <strong>Synthetic mode.</strong> <code>FD_STUB=1</code> is set — the counts
+    on this page and every figure behind it are fabricated fixtures.
+  </div>
+</div>
+{% endif %}
+
+<header class="wrap masthead">
+  <div class="brand">
+    <span class="wordmark">Filing Desk</span>
+    {# The pill reports the same readiness /api/health does. A front door that
+       says "ready" over an empty cache would be the first thing this project
+       claims that isn't checkable. #}
+    {% if ready %}
+    <span class="status" title="{{ facts }} facts cached and queryable">
+      <span class="dot" aria-hidden="true"></span>ready
+    </span>
+    {% else %}
+    <span class="status is-cold" title="No filings cached yet — open a company
+          and Filing Desk will pull it from EDGAR.">
+      <span class="dot" aria-hidden="true"></span>no data yet
+    </span>
+    {% endif %}
+  </div>
+  <nav class="nav">
+    <a href="#what">What it does</a>
+    <a href="#discipline">Discipline</a>
+    <a href="#coverage">Coverage</a>
+    <a class="btn" href="{{ app_url }}?ticker={{ featured[0] }}">Open Filing Desk →</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div class="tags">
+      <span class="tag">{{ "{:,}".format(facts) }} facts</span>
+      <span class="tag">{{ "{:,}".format(universe) }} tickers</span>
+      <span class="tag tag-ok">XBRL · SEC EDGAR</span>
+    </div>
+    <h1>What public companies<br>actually reported.</h1>
+    <p class="lede">
+      Every figure is retrieved from a specific filing — none are generated.
+    </p>
+    <p class="blurb">
+      Ask in plain English. Filing Desk answers from XBRL company facts,
+      computes every ratio in Python from the filed inputs, and cites the
+      filing behind each number. Where a quarter was never filed, it says so.
+    </p>
+    <div class="actions">
+      {% if model_enabled %}
+      <a class="btn btn-lg" href="/ask">Ask a question →</a>
+      <a class="btn-ghost" href="{{ app_url }}?ticker={{ featured[0] }}">Open the dashboard</a>
+      {% else %}
+      {# No model configured: the charts are the whole product, so the primary
+         action has to be the one that works. #}
+      <a class="btn btn-lg" href="{{ app_url }}?ticker={{ featured[0] }}">Open the dashboard →</a>
+      <a class="btn-ghost" href="#what">See what it does</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="jump">
+    <span>JUMP TO</span>
+    <div class="jump-list">
+      {% for t in featured %}
+      <a class="ticker" href="{{ app_url }}?ticker={{ t }}">{{ t }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <a class="shot" href="{{ app_url }}?ticker={{ featured[0] }}" title="Open Filing Desk">
+    <div class="shot-bar">
+      <span class="light"></span><span class="light"></span><span class="light"></span>
+      <span class="path">filing-desk — {{ featured[0] }} · quarterly · 12 periods</span>
+    </div>
+    <div class="shot-frame">
+      <img src="/static/landing-hero.png" width="3136" height="3089"
+           alt="The Filing Desk dashboard showing NVIDIA quarterly fundamentals:
+                revenue, margin, income and free cash flow cards over a margin
+                profile chart.">
+    </div>
+    <div class="shot-fade"><span class="shot-cta">▶ Click to open Filing Desk</span></div>
+  </a>
+</main>
+
+<section id="what" class="wrap">
+  <div class="eyebrow">WHAT IT DOES</div>
+  <h2>Filed figures, not guesses</h2>
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-tag">ASK</div>
+      <div class="card-title">Plain English, every figure cited</div>
+      <div class="card-body">Ask what happened to margins or where cash went.
+        The answer names the filing each number came from, so you can check it.</div>
+    </div>
+    <div class="card">
+      <div class="card-tag">FUNDAMENTALS</div>
+      <div class="card-title">Revenue, margin, income, FCF</div>
+      <div class="card-body">Headline metrics with year-ago deltas and a
+        sparkline per card, quarterly or annual, across 8 to Max periods.</div>
+    </div>
+    <div class="card">
+      <div class="card-tag">MARGIN PROFILE</div>
+      <div class="card-title">Gross, operating, net over time</div>
+      <div class="card-body">Ratios computed in Python from filed inputs:
+        GrossProfit / Revenues, OperatingIncome / Revenues,
+        NetIncome / Revenues.</div>
+    </div>
+    <div class="card">
+      <div class="card-tag">CASH</div>
+      <div class="card-title">Operating vs. free cash flow</div>
+      <div class="card-body">FCF is operating cash flow minus capex. Cash-flow
+        statements are filed year to date, so quarters are differenced from the
+        cumulative figure.</div>
+    </div>
+    <div class="card">
+      <div class="card-tag">HONESTY</div>
+      <div class="card-title">Derived quarters are labeled</div>
+      <div class="card-body">No company files a 10-Q for Q4. Reconstructed
+        periods are drawn with a dashed outline and counted in a note under the
+        chart.</div>
+    </div>
+    <div class="card">
+      <div class="card-tag">SYNC</div>
+      <div class="card-title">Straight from EDGAR</div>
+      <div class="card-body">Company facts pulled from SEC XBRL with a force
+        re-sync button and a visible last-synced timestamp.</div>
+    </div>
+  </div>
+</section>
+
+<section id="discipline" class="wrap">
+  <div class="split">
+    <div>
+      <div class="eyebrow">THE DISCIPLINE</div>
+      <h2>The model never<br>touches a number</h2>
+      <p>Language models are good at reading and bad at arithmetic. Filing Desk
+        splits the job: retrieval and prose from the model, every figure and
+        ratio from Python.</p>
+    </div>
+    <div class="rules">
+      <div class="rule-item">
+        <span class="check" aria-hidden="true">✓</span>
+        <div>
+          <div class="rule-title">Figures are retrieved, never generated</div>
+          <div class="rule-body">Every number traces to a specific XBRL fact in
+            a specific filing. If it isn't filed, it isn't shown.</div>
+        </div>
+      </div>
+      <div class="rule-item">
+        <span class="check" aria-hidden="true">✓</span>
+        <div>
+          <div class="rule-title">Ratios are computed in Python</div>
+          <div class="rule-body">Formulas are fixed and printed under each chart
+            — the model doesn't do the arithmetic.</div>
+        </div>
+      </div>
+      <div class="rule-item">
+        <span class="check" aria-hidden="true">✓</span>
+        <div>
+          <div class="rule-title">Reconstruction is disclosed</div>
+          <div class="rule-body">Differenced or inferred periods are visually
+            marked and explained, not silently smoothed in.</div>
+        </div>
+      </div>
+      <div class="rule-item">
+        <span class="check" aria-hidden="true">✓</span>
+        <div>
+          <div class="rule-title">No market data, no advice</div>
+          <div class="rule-body">Filings only. No prices, no targets, no
+            buy/sell framing — descriptive by design.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="coverage" class="wrap">
+  <div class="grid-4">
+    {% for s in stats %}
+    <div class="card">
+      <div class="stat-label">{{ s.label }}</div>
+      <div class="stat-value">{{ s.value }}</div>
+      <div class="stat-note">{{ s.note }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="stack">
+    <span class="stack-label">BUILT WITH</span>
+    {% for s in stack %}
+    <span class="stack-item">{{ s }}</span>
+    {% endfor %}
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footer-row">
+    <p class="disclaimer">Filing Desk describes what was reported and how it
+      moved. It is not investment advice: no recommendations, price targets,
+      valuations or buy/sell framing, and no market data — SEC filings only.
+      Quarters marked <em>derived</em> were reconstructed, not filed.</p>
+    <a class="footer-link" href="{{ app_url }}?ticker={{ featured[0] }}">Open Filing Desk →</a>
+  </div>
+</footer>
+
+</body>
+</html>

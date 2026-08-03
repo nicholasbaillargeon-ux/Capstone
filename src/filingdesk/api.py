@@ -202,6 +202,37 @@ def recent(n: int = 20) -> dict:
 
 # ---- UI ------------------------------------------------------------------
 
+@app.get("/landing", response_class=HTMLResponse)
+def landing() -> HTMLResponse:
+    """The front door.
+
+    Its numbers are read from the same place /api/health reads them, not
+    written into the page. A landing page that advertises a fact count the
+    instance behind it doesn't have would be the first unchecked claim in a
+    project whose whole argument is that every figure is checkable.
+    """
+    h = _health()
+    facts, universe = h["facts_loaded"] or 0, h["universe"]
+    loaded_n = h["companies_loaded"] or 0
+    stats = [
+        {"label": "XBRL FACTS", "value": f"{facts:,}",
+         "note": "indexed and queryable"},
+        {"label": "SEC FILERS", "value": f"{universe:,}",
+         "note": "searchable by ticker or name"},
+        {"label": "COMPANIES CACHED", "value": f"{loaded_n:,}",
+         "note": "pulled on first view, kept fresh"},
+        {"label": "PERIODS", "value": "8–Max", "note": "quarterly or annual"},
+    ]
+    stack = ["Python", "XBRL company facts", "SEC EDGAR"]
+    if h["model_enabled"]:
+        stack += [config.CHAT_MODEL, "LiteLLM" if config.LLM_PROVIDER
+                  == "openai" else "Ollama"]
+    return HTMLResponse(web.render(
+        "landing.html", stub=STUB, app_url="/", featured=config.FEATURED,
+        ready=h["ready"], facts=facts, universe=universe,
+        model_enabled=h["model_enabled"], stats=stats, stack=stack))
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(ticker: str = "NVDA") -> HTMLResponse:
     """The dashboard. All rendering below the shell is client-side, against

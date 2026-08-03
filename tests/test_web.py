@@ -77,6 +77,44 @@ def test_fact_rows_expose_flags_and_computed():
     assert [r["id"] for r in rows] == [1, 2]
 
 
+def _landing(**over) -> str:
+    ctx = {"stub": False, "app_url": "/", "featured": ["NVDA", "AAPL"],
+           "ready": True, "facts": 423357, "universe": 10432,
+           "model_enabled": True, "stack": ["Python"],
+           "stats": [{"label": "XBRL FACTS", "value": "423,357",
+                      "note": "indexed and queryable"}]}
+    return web.render("landing.html", **{**ctx, **over})
+
+
+def test_landing_links_into_the_running_app():
+    """Its CTAs are relative. The page shipped with a LAN address baked in,
+    which only works from the machine it was captured on."""
+    html = _landing()
+    assert 'href="/?ticker=NVDA"' in html
+    assert 'href="/?ticker=AAPL"' in html
+    assert 'href="/ask"' in html
+    assert "192.168" not in html
+
+
+def test_landing_counts_come_from_the_instance():
+    html = _landing(facts=12, universe=7)
+    assert "12 facts" in html and "7 tickers" in html
+    assert "423,357 facts" not in html
+
+
+def test_landing_reports_an_empty_cache_rather_than_ready():
+    assert "no data yet" in _landing(ready=False, facts=0)
+    assert "no data yet" not in _landing()
+
+
+def test_landing_leads_with_the_dashboard_when_there_is_no_model():
+    """"Ask a question" as the primary action would advertise the one surface
+    that needs a model the instance does not have."""
+    html = _landing(model_enabled=False)
+    assert 'class="btn btn-lg" href="/?ticker=NVDA"' in html
+    assert 'href="/ask"' not in html
+
+
 def _collect(gen):
     async def drain():
         return [chunk async for chunk in gen]
