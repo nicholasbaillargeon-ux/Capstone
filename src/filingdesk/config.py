@@ -127,6 +127,21 @@ _chat_default, _embed_default = _DEFAULT_MODELS.get(
 CHAT_MODEL = os.environ.get("FD_CHAT_MODEL", "").strip() or _chat_default
 EMBED_MODEL = os.environ.get("FD_EMBED_MODEL", "").strip() or _embed_default
 
+# Planning and drafting can run on different models. Selecting a tool from four
+# is a smaller job than transcribing figures without mangling them, and the
+# planning loop is where most of the wall clock goes — so a smaller, faster
+# model here is the obvious trade to test. Defaults to the same model, which
+# makes it a no-op until someone sets it.
+PLAN_CHAT_MODEL = os.environ.get("FD_PLAN_CHAT_MODEL", "").strip() or CHAT_MODEL
+
+# Whether to end the planning loop as soon as a step has produced facts,
+# rather than making one more call to hear the model say it wants no more
+# tools. Saves a full round trip per question; costs any question whose plan
+# genuinely needs a second round of tool calls to be decided after seeing the
+# first round's results. Off until the eval suite says otherwise.
+STOP_ON_FIRST_FACTS = os.environ.get(
+    "FD_STOP_ON_FIRST_FACTS", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def model_configured() -> bool:
     """Enabled AND actually told which model to call."""

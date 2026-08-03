@@ -44,8 +44,9 @@ def _disable_effort(detail: str) -> None:
 
 # ---- Ollama --------------------------------------------------------------
 
-def _ollama_chat(messages: list[dict], tools: list[dict] | None) -> dict:
-    body = {"model": config.CHAT_MODEL, "messages": messages,
+def _ollama_chat(messages: list[dict], tools: list[dict] | None,
+                 model: str | None = None) -> dict:
+    body = {"model": model or config.CHAT_MODEL, "messages": messages,
             "stream": False, "options": {"temperature": 0}}
     if tools:
         body["tools"] = tools
@@ -72,7 +73,7 @@ def _headers() -> dict:
 
 
 def _openai_chat(messages: list[dict], tools: list[dict] | None,
-                 effort: str | None = None) -> dict:
+                 effort: str | None = None, model: str | None = None) -> dict:
     # Ollama lets tool results carry a bare `name`; the OpenAI schema wants a
     # tool_call_id on every tool message and rejects the request without one.
     # The agent's retry loop also emits tool messages for calls it REJECTED,
@@ -106,7 +107,7 @@ def _openai_chat(messages: list[dict], tools: list[dict] | None,
             continue
         out_msgs.append({"role": role, "content": m.get("content", "")})
 
-    body = {"model": config.CHAT_MODEL, "messages": out_msgs,
+    body = {"model": model or config.CHAT_MODEL, "messages": out_msgs,
             "temperature": 0, "stream": False}
     if tools:
         body["tools"] = tools
@@ -179,17 +180,18 @@ def _guard_config() -> None:
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None,
-         effort: str | None = None) -> dict:
-    """`effort` overrides the reasoning budget for this one call.
+         effort: str | None = None, model: str | None = None) -> dict:
+    """`effort` and `model` override the budget and the model for one call.
 
-    Planning and drafting are both chat calls but want different budgets —
-    see config.REASONING_EFFORT. Ollama has no equivalent knob, so the
-    argument is simply ignored on that path.
+    Planning and drafting are both chat calls but want different settings —
+    see config.REASONING_EFFORT and config.PLAN_CHAT_MODEL. Ollama has no
+    reasoning knob, so `effort` is ignored on that path; `model` is not, and
+    both paths honour it.
     """
     _guard_config()
     if config.LLM_PROVIDER == "openai":
-        return _openai_chat(messages, tools, effort)
-    return _ollama_chat(messages, tools)
+        return _openai_chat(messages, tools, effort, model)
+    return _ollama_chat(messages, tools, model)
 
 
 def embed(texts: list[str]) -> list[list[float]]:

@@ -203,7 +203,8 @@ async def gather_facts(sess, question: str, ticker: str
     for step in range(MAX_TOOL_STEPS):
         try:
             msg = llm.chat(messages, tools,
-                           effort=config.PLAN_REASONING_EFFORT)
+                           effort=config.PLAN_REASONING_EFFORT,
+                           model=config.PLAN_CHAT_MODEL)
         except (requests.RequestException, llm.LLMError) as exc:
             # The planning call runs inside the MCP session, so without this
             # an unreachable model surfaces as "the filings database could
@@ -267,6 +268,16 @@ async def gather_facts(sess, question: str, ticker: str
                     log.warning("tool.empty", tool=v.name, args=v.args)
             messages.append({"role": "tool", "name": v.name,
                              "content": json.dumps(payload)[:4000]})
+
+        # The loop's normal exit is a whole round trip whose only content is
+        # the model declining to call anything else. When facts are already in
+        # hand that call buys nothing but latency — unless the plan genuinely
+        # needed a second round, decided after seeing the first round's
+        # results, which is what this trades away. Measured, not assumed.
+        if config.STOP_ON_FIRST_FACTS and facts:
+            log.info("plan.done", step=step, facts=len(facts),
+                     stopped_early=True)
+            break
 
     return facts, last_error_kind
 
