@@ -468,8 +468,51 @@ roughly 1,500 tokens of thinking and writing per question.
 
 That is an inference problem, and the levers on it are all on the other machine
 and all bigger than a flag: different hardware, a smaller model for the
-planning call, or fewer reasoning tokens. `FD_PLAN_CHAT_MODEL` already exists
-for the middle one and has never been measured — gpt-oss-20b is served, it is
-apparently no slower, and choosing between four tools is a smaller job than
-transcribing figures. That is the next experiment, and it is one this
-repository can run by itself.
+planning call, or fewer reasoning tokens.
+
+## 6. A smaller model for the planning call — no change, either way
+
+`FD_PLAN_CHAT_MODEL` has existed since the split-effort experiment and had
+never been measured. The case for it: choosing one tool from four is a smaller
+job than transcribing figures without mangling them, and gpt-oss-20b is served
+by the same proxy.
+
+There is an earlier run of this — `plan-20b-20260802T215857Z`, 13/15 — but it
+predates stop-on-first-facts, the second repair attempt, and the prompt change
+that fixed E2's uncited negative, so it says nothing about the current code.
+Re-run on HEAD, changing only the planning model:
+
+| | pass | median | worst | planning |
+|---|---|---|---|---|
+| gpt-oss-120b plans | 15/15 | 19.7s | 37.8s | 4.9s |
+| gpt-oss-20b plans | 15/15 | 19.8s | 37.7s | 4.8s |
+
+Nothing. Not a tenth of a second, not a case.
+
+Which is the same finding as §5 wearing different clothes, and it is the second
+independent confirmation of it: the 20b is not faster than the 120b on this
+hardware, so putting it anywhere in the pipeline changes nothing. If the two
+models had the speed relationship their parameter counts imply, this table
+would show it and §5's draft-model arithmetic would work. Neither does.
+
+The result worth keeping is the negative one on **accuracy**: planning on a 20b
+costs nothing either. All 15 cases still pass, the tool calls are still
+well-formed, the entity check still catches nothing. So if the serving side
+ever changes such that the 20b *is* cheaper, this switch is already known to be
+safe — which is most of what an experiment like this is for.
+
+Left at its default of "same model as the draft", because a knob that changes
+neither speed nor accuracy should not be set.
+
+## Where that leaves it
+
+Six things tried, measured, and settled. Two worked, and both were about making
+fewer or better-timed model calls. Four came to nothing, and three of those
+four came to nothing for the same underlying reason: **on this hardware,
+generation speed does not vary the way model size says it should.** Prefill is
+free, the 20b is not faster than the 120b, and a draft model would cost as much
+as the thing it is drafting for.
+
+Everything the application can do about latency has now been done. What is left
+is 44.7 tokens/s and roughly 1,500 tokens of thinking and writing per question,
+and the only lever on that is the hardware the models run on.
