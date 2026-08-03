@@ -59,7 +59,8 @@ def _chat(messages: list[dict], tools: list[dict] | None,
     # the request without one. The agent's retry loop also emits tool messages
     # for calls it REJECTED, which by definition have no id — so ids are
     # synthesised in order.
-    out_msgs, pending_ids = [], []
+    out_msgs: list[dict] = []
+    pending_ids: list[str] = []
     for m in messages:
         role = m.get("role")
         if role == "tool":

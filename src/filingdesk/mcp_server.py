@@ -5,7 +5,9 @@ cache has never seen is fetched on the first call rather than refused — which
 closes the skeleton's largest stated limitation.
 """
 try:  # MCP SDK 2.x
-    from mcp.server import MCPServer as _Server
+    # Deliberately typed as unresolvable: this name does not exist in the 1.x
+    # SDK that is installed, which is the whole reason for the fallback below.
+    from mcp.server import MCPServer as _Server  # type: ignore[attr-defined]
 except ImportError:  # MCP SDK 1.x
     from mcp.server.fastmcp import FastMCP as _Server
 
@@ -27,26 +29,46 @@ if os.environ.get("FD_STUB") == "1":
 mcp = _Server("filingdesk")
 
 
-def _company(ticker: str) -> tuple[int | None, dict | None]:
+class CompanyUnavailable(Exception):
+    """No CIK for this ticker, or no filings that could be loaded for it.
+
+    It carries the payload the tool should hand back, because the two cases
+    call for different next moves from the model: a ticker that is not
+    registered gets suggestions, a company whose filings would not load gets
+    the reason they would not.
+
+    Raised rather than returned. The old shape was (cik, error) with "exactly
+    one of the two is not None" as a comment — a contract the type system
+    cannot check and every caller had to remember, which is why every caller
+    passed an `int | None` into something that wanted an `int`.
+    """
+
+    def __init__(self, payload: dict) -> None:
+        super().__init__(payload.get("error", ""))
+        self.payload = payload
+
+
+def _company(ticker: str) -> int:
     """Resolve a ticker to a CIK with its filings on disk, loading if needed.
 
-    Returns (cik, error_payload); exactly one of the two is not None.
+    Raises CompanyUnavailable when it cannot.
     """
     t = (ticker or "").upper().strip()
     cik = companies.resolve(t)
     if cik is None:
         hits = companies.search(t, 5)
-        return None, {"error": f"{t!r} is not an SEC-registered ticker.",
-                      "error_kind": "unknown_ticker",
-                      "did_you_mean": [h["ticker"] for h in hits]}
+        raise CompanyUnavailable({
+            "error": f"{t!r} is not an SEC-registered ticker.",
+            "error_kind": "unknown_ticker",
+            "did_you_mean": [h["ticker"] for h in hits]})
 
     if not series.has_any(cik):
         res = seed.ensure(t)
         if not res.get("ok"):
-            return None, {"error": res["error"],
-                          "error_kind": res.get("error_kind",
-                                                "no_company_data")}
-    return cik, None
+            raise CompanyUnavailable({
+                "error": res["error"],
+                "error_kind": res.get("error_kind", "no_company_data")})
+    return cik
 
 
 @mcp.tool()
@@ -77,9 +99,10 @@ def fd_get_concept(ticker: str, concept: str, quarters: int = 8,
     Every fact carries its accession number, form and filing date, and is
     flagged when derived (a reconstructed Q4) or restated.
     """
-    cik, err = _company(ticker)
-    if err:
-        return err
+    try:
+        cik = _company(ticker)
+    except CompanyUnavailable as e:
+        return e.payload
     facts = series.get(cik, concept, period, quarters)
     if not facts:
         return {"error": f"{ticker.upper()} reports no data for {concept}.",
@@ -102,9 +125,10 @@ def fd_compute_metric(ticker: str, metric: str, quarters: int = 8,
     Returns the value per period plus the formula and every input fact, so
     each ratio can be traced back to the filed figures underneath it.
     """
-    cik, err = _company(ticker)
-    if err:
-        return err
+    try:
+        cik = _company(ticker)
+    except CompanyUnavailable as e:
+        return e.payload
     res = metrics.compute(cik, metric, period, quarters)
     if "error" in res:
         return res
@@ -119,9 +143,10 @@ def fd_list_concepts(ticker: str) -> dict:
     Call this before giving up. "No tool covers that" and "this company never
     reported that" are different answers and the user deserves to know which.
     """
-    cik, err = _company(ticker)
-    if err:
-        return err
+    try:
+        cik = _company(ticker)
+    except CompanyUnavailable as e:
+        return e.payload
     return {"ticker": ticker.upper(), "company": companies.name_of(ticker),
             "concepts": series.available_concepts(cik),
             "supported_metrics": [m["key"] for m in metrics.available(cik)]}

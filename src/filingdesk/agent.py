@@ -422,7 +422,7 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
     td = time.time()
     emit("draft", "start")
     try:
-        msg = await asyncio.to_thread(
+        reply = await asyncio.to_thread(
             llm.chat, [{"role": "user", "content": prompts.DRAFT.format(
                 question=question, facts=table,
                 passages="\n---\n".join(p["text"][:400] for p in passages)
@@ -436,7 +436,7 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
                        NO_MODEL_MSG + " The figures retrieved for this question "
                        "are kept below.", timing,
                        question=question, ticker=ticker, facts=facts)
-    draft = msg["content"]
+    draft = reply["content"]
     timing["draft"] = int((time.time() - td) * 1000)
     emit("draft", "done", ms=timing["draft"])
 

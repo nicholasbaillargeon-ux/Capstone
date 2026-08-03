@@ -78,7 +78,7 @@ def _seed(con) -> None:
     print(f"[stub] seeded {len(rows)} synthetic facts")
 
 
-def fake_embed(texts):
+def fake_embed(texts: list[str]) -> list[list[float]]:
     out = []
     for t in texts:
         h = abs(hash(t.lower()))
@@ -96,9 +96,17 @@ def _last_user(messages):
     return ""
 
 
-def fake_chat(messages, tools=None):
+def fake_chat(messages: list[dict], tools: list[dict] | None = None,
+              effort: str | None = None, model: str | None = None) -> dict:
     """Behaviour depends on the question, so the 5 smoke questions exercise
-    5 different paths rather than replaying one canned answer."""
+    5 different paths rather than replaying one canned answer.
+
+    `effort` and `model` are accepted and ignored: there is no model here to
+    spend a reasoning budget or to choose. They are in the signature because a
+    stand-in that cannot be called the way the real thing is called is not a
+    stand-in — when the planning loop grew `effort=`, this raised TypeError
+    from inside the MCP session, and the request reported it as "the filings
+    database could not be reached"."""
     if tools:
         # Already have tool output? Stop calling tools.
         if any(m.get("role") == "tool" for m in messages):

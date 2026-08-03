@@ -267,3 +267,26 @@ def _notes(tmp_path):
     (d / "a.md").write_text("Margin moves are mostly mix.\n\nTreat one quarter "
                             "as noise.\n", encoding="utf-8")
     return d
+
+
+# ---- the stand-ins must be callable the way the real things are ----------
+
+def test_the_stubs_match_the_signatures_they_replace():
+    """stub.install() rebinds llm.chat and llm.embed. When the planning loop
+    grew `effort=`, the fake did not, and every synthetic-mode question died
+    with TypeError inside the MCP session — surfaced to the user as "the
+    filings database could not be reached", which is a confident wrong
+    diagnosis of a mode that never touches a database.
+
+    Comparing signatures rather than calling: the point is that the fake can
+    be called however the real one can, not what it returns."""
+    import inspect
+
+    from filingdesk import stub
+
+    for real, fake in ((llm.chat, stub.fake_chat), (llm.embed, stub.fake_embed)):
+        want = inspect.signature(real).parameters
+        got = inspect.signature(fake).parameters
+        assert list(got) == list(want), f"{fake.__name__} vs {real.__name__}"
+        for name, p in want.items():
+            assert got[name].default == p.default, f"{fake.__name__}({name})"
