@@ -1,4 +1,4 @@
-"""Offline fixtures. Lets the whole thread run with no Ollama and no SEC,
+"""Offline fixtures. Lets the whole thread run with no model and no SEC,
 so the wiring can be proved before the real stack is attached.
 
 ALL NUMBERS HERE ARE SYNTHETIC. Not NVDA's actual results.

@@ -10,13 +10,15 @@ Three surfaces over one data layer:
 - **`/app` — an interactive dashboard.** Search any of the ~10,400 SEC registrants,
   chart any line item they report, and read every number back to the filing it
   came from. No language model involved.
-- **`/ask` — a grounded answer.** A local LLM narrates the same retrieved facts,
+- **`/ask` — a grounded answer.** An open-weights LLM narrates the same retrieved facts,
   and a deterministic guard strikes any figure that traces to nothing.
 
 Set `FD_BASE_PATH` to serve all three under a prefix behind a reverse proxy.
 
-Runs on homelab CPU. No GPU, no hosted model. Filings are cached locally; the only
-network call is to SEC EDGAR when a company is loaded or refreshed.
+Runs on homelab hardware end to end: filings cached locally, every figure and
+ratio computed in Python, and the model served by a LiteLLM proxy on the same
+network — no commercial API, no data leaving the house. Off-network calls are
+to SEC EDGAR, when a company is loaded or refreshed.
 
 ---
 
@@ -30,7 +32,7 @@ year-to-date cash-flow figures are differenced back into quarters, the missing Q
 is reconstructed as `FY − (Q1+Q2+Q3)`, and anything reconstructed rather than filed
 is marked as such on the chart, in the table, and in the answer.
 
-Ask a question instead and the same facts go through MCP tools to a local model,
+Ask a question instead and the same facts go through MCP tools to the model,
 which may quote them but never compute them: ratios are calculated in Python, and a
 guard re-checks every numeral in the draft against the retrieved values before it
 is shown.
@@ -62,7 +64,7 @@ flowchart TB
     GUARD{"Grounding guard · guard.py<br/>every numeral vs retrieved values"}
     REPAIR["Repair · one more model call"]
     OUT["Answer + fact table<br/>+ accession numbers + trace_id"]
-    LLM["Model endpoint<br/>OpenAI-compatible (LiteLLM, vLLM,<br/>Fireworks…) or local Ollama"]
+    LLM["Model endpoint<br/>LiteLLM proxy · OpenAI-compatible<br/>gpt-oss-120b"]
 
     WEB --> SERIES
     ASK --> SCOPE
@@ -131,32 +133,34 @@ sudo systemctl daemon-reload && sudo systemctl enable --now filingdesk
 ```
 
 The narrated answers at `/ask` need a model; the dashboard does not. With
-`FD_LLM_PROVIDER=none` the health chip reads `dashboard only · no model` — stated
+an empty `FD_CHAT_MODEL` the health chip reads `dashboard only · no model` — stated
 as a fact rather than a warning, because nothing on the dashboard is missing
 without one.
 
 ### Choosing a model
 
-Three options, and **the first is a complete configuration, not a degraded one**:
+One endpoint, OpenAI-compatible. The default is the homelab LiteLLM proxy in
+front of gpt-oss-120b; point it anywhere else that speaks the same API — vLLM,
+llama.cpp's server, LM Studio, a hosted provider — and nothing else changes.
 
 ```bash
-# dashboard only — the default posture on a memory-constrained box.
-# /ask is switched off and says so; nothing else changes, because charts,
-# figures, ratios and provenance never touch a model.
-FD_LLM_PROVIDER=none
-
-# local, nothing leaves the machine, wants ~5GB RAM for a 7B
-FD_LLM_PROVIDER=ollama
-FD_CHAT_MODEL=qwen2.5:7b-instruct-q4_K_M
-
-# or any OpenAI-compatible endpoint — a self-hosted LiteLLM or vLLM proxy,
-# Fireworks, Together, Groq, OpenRouter, llama.cpp's server, LM Studio
-FD_LLM_PROVIDER=openai
-FD_LLM_BASE_URL=https://litellm.example.internal/v1
+# the default: nothing to set but the key
 FD_LLM_API_KEY=sk-...
-FD_CHAT_MODEL=gpt-oss-120b
+
+# another endpoint — then name a model IT serves, since there is no safe default
+FD_LLM_BASE_URL=https://vllm.example.internal/v1
+FD_CHAT_MODEL=some-model-it-serves
 FD_EMBED_MODEL=                  # optional — see below
+
+# dashboard only, and **a complete configuration rather than a degraded one**:
+# /ask switches off and says so, while charts, figures, ratios and provenance
+# carry on untouched, because none of them ever involved a model.
+FD_CHAT_MODEL=
 ```
+
+There is no local-inference path any more. Ollama on the app host bought a 7B
+model where the proxy serves a 120B one on hardware built for it, and cost every
+call site a second message shape to reason about.
 
 A proxy on the LAN is the interesting third case: the wire format is identical
 to a hosted provider, so nothing in the app changes, but the traffic never
@@ -218,15 +222,17 @@ python -m filingdesk.models --check  # is the configured model real and answerin
 ```
 
 A wrong model ID is the most likely setup failure and the least legible one — the
-provider returns "model not found" from inside a tool-calling loop, which the app
+endpoint returns "model not found" from inside a tool-calling loop, which the app
 can only report as "the model could not be reached". `--check` names it directly.
 
-State the tradeoff plainly: a hosted endpoint means the question and the retrieved
-figures leave the machine, and "no network call at request time" stops being true.
-**The grounding guarantee is unaffected** — retrieval, ratio computation and the
-guard all run locally against locally cached filings, so a hosted model still
-cannot introduce a number that is not in a filing. It can only phrase the ones it
-was given, and anything else is struck.
+State the tradeoff plainly: the question and the retrieved figures leave this
+process for the model endpoint, so "no network call at request time" is not true.
+On the reference deployment that endpoint is a box on the same LAN, but point
+`FD_LLM_BASE_URL` at a hosted API and the same sentence covers the public
+internet. **The grounding guarantee is unaffected either way** — retrieval, ratio
+computation and the guard all run locally against locally cached filings, so no
+model, wherever it runs, can introduce a number that is not in a filing. It can
+only phrase the ones it was given, and anything else is struck.
 
 Changing `FD_EMBED_MODEL` changes vector width, which invalidates the vault index.
 Re-index after switching:
@@ -252,7 +258,7 @@ curl -s 'localhost:8088/api/companies/search?q=nvidia' | jq
 curl -s localhost:8088/api/health | jq
 ```
 
-To run with no Ollama and no network at all, add `--stub`. Fixtures are synthetic
+To run with no model and no network at all, add `--stub`. Fixtures are synthetic
 and every page rendered in that mode says so.
 
 ## Three examples
@@ -369,8 +375,8 @@ Stated plainly, because a demo that hides these is worse than one that doesn't.
 
 Charts are hand-written SVG with no chart library and no CDN, on a
 colourblind-validated three-slot categorical palette, with a table view behind
-every chart. Any OpenAI-compatible endpoint (a self-hosted LiteLLM proxy in
-front of gpt-oss is the reference deployment) or local Ollama · DuckDB over
+every chart. Any OpenAI-compatible endpoint, with a self-hosted LiteLLM proxy in
+front of gpt-oss-120b as the reference deployment · DuckDB over
 Parquet for filings · `sqlite-vec` for notes, with a numpy fallback ·
 self-written MCP server over stdio · FastAPI · Docker · Caddy · systemd ·
 Gitea Actions. All open source, all local.

@@ -14,35 +14,27 @@ services:
       FD_ROOT: /data
       FD_VAULT_DIR: /vault
       FD_LOG_FORMAT: json
-      # Ollama stays on the host — CPU inference gains nothing from a
-      # container and the model cache is already there.
-      OLLAMA_HOST: http://host.docker.internal:11434
       SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT in .env}
-      # `-` not `:-`: substitute only when the variable is absent from .env,
-      # not when it is present and empty. An empty FD_EMBED_MODEL is a real
-      # setting — it is how an endpoint that serves chat but not embeddings is
-      # described — and `:-` overwrote it with an Ollama model name the proxy
-      # has never heard of, producing a 404 per answer.
-      FD_CHAT_MODEL: ${FD_CHAT_MODEL-qwen2.5:7b-instruct-q4_K_M}
-      FD_EMBED_MODEL: ${FD_EMBED_MODEL-nomic-embed-text}
 
-      # Without these three the container ignored the whole OpenAI-compatible
-      # path and fell back to Ollama on the host — which, on a machine with no
-      # local Ollama, is a connection refused for every answer while .env sits
-      # right there configured correctly. The native unit reads .env itself
-      # (run.sh) and so never had the gap; only this path did.
-      #
-      # Defaults keep the Ollama deployment behaving exactly as before.
-      FD_LLM_PROVIDER: ${FD_LLM_PROVIDER:-ollama}
-      # Mirrors the fallback in config.py rather than passing an empty string:
-      # an unset variable there selects the default, but an empty one wins over
-      # it and leaves the app POSTing to "/chat/completions" with no host.
-      FD_LLM_BASE_URL: ${FD_LLM_BASE_URL:-https://api.fireworks.ai/inference/v1}
-      # Empty is safe here — _headers() sends no Authorization when it is
-      # falsy, which is what a keyless local endpoint (vLLM, LM Studio) wants.
+      # One endpoint, OpenAI-compatible, defaulting to the homelab LiteLLM
+      # proxy — so the only thing this deployment has to be told is the key.
+      # There is no Ollama here any more: it lived on the host because CPU
+      # inference gains nothing from a container, and it served a 7B model
+      # where the proxy serves a 120B one.
+      FD_LLM_BASE_URL: ${FD_LLM_BASE_URL:-https://litellm.baillargeon.casa/v1}
+      # Empty is safe: _headers() sends no Authorization when it is falsy,
+      # which is what a keyless local endpoint (vLLM, LM Studio) wants.
       # Interpolated from .env, never written into this file: .env is
       # gitignored and this is not.
       FD_LLM_API_KEY: ${FD_LLM_API_KEY:-}
+      # `-` not `:-`: substitute only when the variable is ABSENT from .env,
+      # not when it is present and empty. An empty FD_CHAT_MODEL is a real
+      # setting — it is how dashboard-only mode is selected — and `:-` would
+      # overwrite it with a model name and re-enable /ask against the user's
+      # stated intent. Same for the embedding model, which is empty on the
+      # default endpoint because it serves chat only.
+      FD_CHAT_MODEL: ${FD_CHAT_MODEL-}
+      FD_EMBED_MODEL: ${FD_EMBED_MODEL-}
       # Latency/accuracy dial — see config.py for the measured tradeoff.
       FD_REASONING_EFFORT: ${FD_REASONING_EFFORT-medium}
 

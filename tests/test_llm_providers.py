@@ -1,8 +1,8 @@
-"""Tests for the model provider seam.
+"""Tests for the model endpoint seam.
 
-The agent and the tool-call validator are written against the Ollama message
-shape. When the provider is an OpenAI-compatible endpoint the translation
-happens in llm.py, and it is the kind of code that fails silently — a dropped
+The agent and the tool-call validator are written against a flatter message
+shape than the OpenAI schema the endpoint speaks. The translation happens in
+llm.py, and it is the kind of code that fails silently — a dropped
 tool_call_id produces a 400 from the API, and a dict where a JSON string was
 expected produces a tool call that never runs.
 """
@@ -29,7 +29,6 @@ class FakeResponse:
 
 @pytest.fixture
 def openai_mode(monkeypatch):
-    monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
     monkeypatch.setattr(config, "LLM_BASE_URL", "https://example.test/v1")
     monkeypatch.setattr(config, "LLM_API_KEY", "sk-test")
     monkeypatch.setattr(config, "CHAT_MODEL", "some/open-model")
@@ -67,7 +66,7 @@ def test_routes_to_the_configured_base_url(openai_mode, monkeypatch):
     assert sent["headers"]["Authorization"] == "Bearer sk-test"
 
 
-def test_response_is_normalised_to_the_ollama_shape(openai_mode, monkeypatch):
+def test_response_is_normalised_to_the_agents_shape(openai_mode, monkeypatch):
     capture(monkeypatch, REPLY_WITH_TOOL)
     msg = llm.chat([{"role": "user", "content": "revenue?"}], tools=[{"x": 1}])
     assert msg["role"] == "assistant"
@@ -78,7 +77,7 @@ def test_response_is_normalised_to_the_ollama_shape(openai_mode, monkeypatch):
 
 
 def test_tool_arguments_are_sent_as_a_json_string(openai_mode, monkeypatch):
-    """Ollama emits arguments as a dict; the OpenAI schema requires a string."""
+    """The agent emits arguments as a dict; the schema requires a string."""
     sent = capture(monkeypatch, PLAIN_REPLY)
     llm.chat([
         {"role": "user", "content": "revenue?"},
@@ -93,8 +92,8 @@ def test_tool_arguments_are_sent_as_a_json_string(openai_mode, monkeypatch):
 
 
 def test_every_tool_message_gets_a_tool_call_id(openai_mode, monkeypatch):
-    """The OpenAI schema rejects a tool message without one, and Ollama's
-    format has no id at all."""
+    """The OpenAI schema rejects a tool message without one, and the shape
+    the agent hands over has no id at all."""
     sent = capture(monkeypatch, PLAIN_REPLY)
     llm.chat([
         {"role": "user", "content": "revenue?"},
@@ -145,26 +144,25 @@ def test_embeddings_are_returned_in_input_order(openai_mode, monkeypatch):
     assert llm.embed(["a", "b", "c"]) == [[1.0], [2.0], [3.0]]
 
 
-def test_ollama_remains_the_default(monkeypatch):
-    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama")
-    monkeypatch.setattr(config, "CHAT_MODEL", "qwen2.5:7b-instruct-q4_K_M")
-    sent = capture(monkeypatch, {"message": {"role": "assistant",
-                                             "content": "hi"}})
-    msg = llm.chat([{"role": "user", "content": "hi"}])
-    assert "/api/chat" in sent["url"]
-    assert msg["content"] == "hi"
+def test_the_proxy_is_the_default_endpoint():
+    """There is one endpoint and no provider switch. A second path existed for
+    local inference and is gone; what remains must default to something that
+    answers, not to nothing."""
+    assert config.LLM_BASE_URL == config.LITELLM_URL
+    assert config.CHAT_MODEL          # a verified name for THAT endpoint
+    assert config.model_enabled() is True
 
 
 def test_an_endpoint_with_no_model_name_says_so(monkeypatch):
-    """A self-hosted proxy defines its own model names, so there is no safe
-    default. Guessing one produces a confident 404 from inside the tool loop;
-    this names the actual problem instead."""
-    monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+    """Point the app at another proxy and its model names are its own, so
+    there is no safe default. Guessing one produces a confident 404 from
+    inside the tool loop; this names the actual problem instead."""
+    monkeypatch.setattr(config, "LLM_BASE_URL", "https://other.test/v1")
     monkeypatch.setattr(config, "CHAT_MODEL", "")
     with pytest.raises(llm.LLMError) as e:
         llm.chat([{"role": "user", "content": "hi"}])
     assert "FD_CHAT_MODEL" in str(e.value)
-    assert config.model_configured() is False
+    assert config.model_enabled() is False
 
 
 def test_describe_names_the_host_being_used(openai_mode):
@@ -176,10 +174,11 @@ def test_describe_names_the_host_being_used(openai_mode):
 
 @pytest.fixture
 def no_model(monkeypatch):
-    monkeypatch.setattr(config, "LLM_PROVIDER", "none")
+    """Dashboard-only: an endpoint may be set, but no model is chosen."""
+    monkeypatch.setattr(config, "CHAT_MODEL", "")
 
 
-def test_none_is_a_configuration_not_a_failure(no_model):
+def test_no_model_is_a_configuration_not_a_failure(no_model):
     assert config.model_enabled() is False
     assert llm.describe() == "no model"
     ok, why = llm.ping()
@@ -189,7 +188,7 @@ def test_none_is_a_configuration_not_a_failure(no_model):
 def test_chat_refuses_clearly_with_no_model(no_model):
     with pytest.raises(llm.LLMError) as e:
         llm.chat([{"role": "user", "content": "hi"}])
-    assert "FD_LLM_PROVIDER=none" in str(e.value)
+    assert "FD_CHAT_MODEL" in str(e.value)
 
 
 def test_no_model_means_no_network_call(no_model, monkeypatch):
@@ -203,16 +202,19 @@ def test_no_model_means_no_network_call(no_model, monkeypatch):
         llm.chat([{"role": "user", "content": "hi"}])
     with pytest.raises(llm.LLMError):
         llm.embed(["x"])
+
     assert llm.ping() == (False, "not configured")
 
 
-def test_the_disabled_flag_cannot_drift_from_the_provider(monkeypatch):
+def test_the_disabled_flag_cannot_drift_from_the_settings(monkeypatch):
     """model_enabled() is derived, not stored. A cached copy could say a
     model is configured while the app refuses to use one."""
-    monkeypatch.setattr(config, "LLM_PROVIDER", "none")
+    monkeypatch.setattr(config, "CHAT_MODEL", "")
     assert config.model_enabled() is False
-    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(config, "CHAT_MODEL", "gpt-oss-120b")
     assert config.model_enabled() is True
+    monkeypatch.setattr(config, "LLM_BASE_URL", "")
+    assert config.model_enabled() is False
 
 
 def test_agent_refuses_without_starting_the_mcp_subprocess(no_model, monkeypatch):

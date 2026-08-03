@@ -121,7 +121,7 @@ def _health() -> dict:
         "vault_indexed": _mtime(config.VAULT_DB),
         "model": config.CHAT_MODEL,
         "model_label": llm.describe(),
-        "provider": config.LLM_PROVIDER,
+        "endpoint": config.LLM_BASE_URL,
         "model_enabled": config.model_enabled() or STUB,
         "model_online": model_ok,
         "model_detail": why,
@@ -242,8 +242,9 @@ def landing() -> HTMLResponse:
     ]
     stack = ["Python", "XBRL company facts", "SEC EDGAR"]
     if h["model_enabled"]:
-        stack += [config.CHAT_MODEL, "LiteLLM" if config.LLM_PROVIDER
-                  == "openai" else "Ollama"]
+        endpoint = ("LiteLLM" if config.LLM_BASE_URL == config.LITELLM_URL
+                    else config.LLM_BASE_URL.split("//")[-1].split("/")[0])
+        stack += [config.CHAT_MODEL, endpoint]
     return HTMLResponse(web.render(
         "landing.html", stub=STUB, base=config.BASE_PATH,
         showcase_url=config.SHOWCASE_URL,
@@ -287,7 +288,7 @@ def ask(ticker: str = "NVDA") -> HTMLResponse:
 def ui_config() -> dict:
     """What the browser needs to know about how this instance is set up."""
     return {"model_enabled": config.model_enabled() or STUB,
-            "provider": config.LLM_PROVIDER,
+            "endpoint": config.LLM_BASE_URL,
             "universe": companies.count()}
 
 

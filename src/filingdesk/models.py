@@ -1,13 +1,13 @@
-"""List and check the models the configured provider actually offers.
+"""List and check the models the configured endpoint actually offers.
 
     python -m filingdesk.models          # what can this key see?
     python -m filingdesk.models --check  # is FD_CHAT_MODEL real and reachable?
 
 Exists because a wrong model ID is the most likely setup failure and the
-least legible one: the provider answers 404 or "model not found" deep inside
+least legible one: the endpoint answers 404 or "model not found" deep inside
 a tool-calling loop, which the app can only report as "the model could not be
-reached". Hosted catalogues also churn faster than any default committed to
-this repo, so the authority has to be the account, not the source.
+reached". What a proxy serves also changes faster than any default committed
+to this repo, so the authority has to be the endpoint, not the source.
 """
 from __future__ import annotations
 
@@ -19,28 +19,23 @@ from . import config, llm
 
 
 def available() -> list[str]:
-    if config.LLM_PROVIDER == "openai":
-        r = requests.get(f"{config.LLM_BASE_URL.rstrip('/')}/models",
-                         headers={"Authorization": f"Bearer {config.LLM_API_KEY}"}
-                         if config.LLM_API_KEY else {},
-                         timeout=15)
-        if r.status_code == 401:
-            raise SystemExit("The provider rejected the API key "
-                             "(FD_LLM_API_KEY).")
-        r.raise_for_status()
-        return sorted(m.get("id", "") for m in (r.json().get("data") or []))
-
-    r = requests.get(f"{config.OLLAMA}/api/tags", timeout=10)
+    r = requests.get(f"{config.LLM_BASE_URL.rstrip('/')}/models",
+                     headers={"Authorization": f"Bearer {config.LLM_API_KEY}"}
+                     if config.LLM_API_KEY else {},
+                     timeout=15)
+    if r.status_code == 401:
+        raise SystemExit("The endpoint rejected the API key (FD_LLM_API_KEY).")
     r.raise_for_status()
-    return sorted(m.get("name", "") for m in (r.json().get("models") or []))
+    # A LiteLLM proxy lists "*" for its passthrough route. It is not a model
+    # anyone can call, and printing it as one invites setting FD_CHAT_MODEL to
+    # it.
+    return sorted(m.get("id", "") for m in (r.json().get("data") or [])
+                  if m.get("id") and m.get("id") != "*")
 
 
 def check() -> int:
     ok, why = llm.ping()
-    endpoint = (config.LLM_BASE_URL if config.LLM_PROVIDER == "openai"
-                else config.OLLAMA)
-    print(f"provider   : {config.LLM_PROVIDER}")
-    print(f"endpoint   : {endpoint}")
+    print(f"endpoint   : {config.LLM_BASE_URL}")
     print(f"chat model : {config.CHAT_MODEL}")
     print(f"embed model: {config.EMBED_MODEL}")
     print(f"reachable  : {ok} ({why})")

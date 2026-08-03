@@ -1,19 +1,20 @@
-"""Model client. Two providers behind one function signature.
+"""Model client. One OpenAI-compatible endpoint, the LiteLLM proxy.
 
-  ollama   local, CPU, no network — the original target
-  openai   any OpenAI-compatible endpoint: Fireworks, Together, Groq,
-           vLLM, llama.cpp's server, LM Studio, OpenRouter, or OpenAI
+There was a second path — Ollama on the app host — and it is gone. It bought
+local inference at 7B when the proxy serves 120B on hardware built for it, and
+it cost every call site a shape to reason about: Ollama takes tool results with
+a bare `name` and emits tool arguments as a dict, the OpenAI schema demands a
+tool_call_id on each and arguments as a JSON string.
 
-The rest of the app only ever sees the Ollama-shaped message dict
-(`{"role", "content", "tool_calls"}`), because that is what `agent.py` and
-`toolcall.py` were written against. Normalising here rather than teaching
-those modules about two formats keeps the seam in one file.
+The rest of the app still sees the flatter message dict
+(`{"role", "content", "tool_calls"}`) that `agent.py` and `toolcall.py` were
+written against, so the translation stayed — it is just one-way now, and lives
+only in `_to_openai` and the tail of `chat`.
 
-Note what changing provider costs: a hosted endpoint means the question and
-the retrieved figures leave the machine, and "no network call at request
-time" stops being true. The grounding guarantee is unaffected — the guard
-runs locally against locally retrieved facts either way, so a hosted model
-still cannot introduce a number that is not in a filing. Choose accordingly.
+What this deployment means, stated plainly: the question and the retrieved
+figures leave this machine for the proxy. The grounding guarantee is
+unaffected — the guard runs locally against locally retrieved facts, so no
+model, wherever it runs, can introduce a number that is not in a filing.
 """
 from __future__ import annotations
 
@@ -42,28 +43,7 @@ def _disable_effort(detail: str) -> None:
           f"{config.REASONING_EFFORT!r}, continuing without it ({detail})")
 
 
-# ---- Ollama --------------------------------------------------------------
-
-def _ollama_chat(messages: list[dict], tools: list[dict] | None,
-                 model: str | None = None) -> dict:
-    body = {"model": model or config.CHAT_MODEL, "messages": messages,
-            "stream": False, "options": {"temperature": 0}}
-    if tools:
-        body["tools"] = tools
-    r = requests.post(f"{config.OLLAMA}/api/chat", json=body, timeout=600)
-    r.raise_for_status()
-    return r.json()["message"]
-
-
-def _ollama_embed(texts: list[str]) -> list[list[float]]:
-    r = requests.post(f"{config.OLLAMA}/api/embed",
-                      json={"model": config.EMBED_MODEL, "input": texts},
-                      timeout=300)
-    r.raise_for_status()
-    return r.json()["embeddings"]
-
-
-# ---- OpenAI-compatible ---------------------------------------------------
+# ---- the endpoint --------------------------------------------------------
 
 def _headers() -> dict:
     h = {"Content-Type": "application/json"}
@@ -72,12 +52,13 @@ def _headers() -> dict:
     return h
 
 
-def _openai_chat(messages: list[dict], tools: list[dict] | None,
-                 effort: str | None = None, model: str | None = None) -> dict:
-    # Ollama lets tool results carry a bare `name`; the OpenAI schema wants a
-    # tool_call_id on every tool message and rejects the request without one.
-    # The agent's retry loop also emits tool messages for calls it REJECTED,
-    # which by definition have no id — so ids are synthesised in order.
+def _chat(messages: list[dict], tools: list[dict] | None,
+          effort: str | None = None, model: str | None = None) -> dict:
+    # The agent speaks the flatter shape: a tool result carries a bare `name`.
+    # The OpenAI schema wants a tool_call_id on every tool message and rejects
+    # the request without one. The agent's retry loop also emits tool messages
+    # for calls it REJECTED, which by definition have no id — so ids are
+    # synthesised in order.
     out_msgs, pending_ids = [], []
     for m in messages:
         role = m.get("role")
@@ -98,7 +79,7 @@ def _openai_chat(messages: list[dict], tools: list[dict] | None,
                     "id": cid, "type": "function",
                     "function": {
                         "name": fn.get("name", ""),
-                        # OpenAI requires a JSON *string*; Ollama emits a dict.
+                        # OpenAI requires a JSON *string*; the agent emits a dict.
                         "arguments": args if isinstance(args, str)
                         else json.dumps(args or {})}})
             out_msgs.append({"role": "assistant",
@@ -137,7 +118,7 @@ def _openai_chat(messages: list[dict], tools: list[dict] | None,
         raise LLMError(f"No choices in response: {str(data)[:300]}")
     msg = choices[0].get("message") or {}
 
-    # Back to the Ollama shape the agent expects. `arguments` stays a string;
+    # Back to the shape the agent expects. `arguments` stays a string;
     # toolcall.validate already parses either form.
     out = {"role": "assistant", "content": msg.get("content") or ""}
     if msg.get("tool_calls"):
@@ -150,7 +131,7 @@ def _openai_chat(messages: list[dict], tools: list[dict] | None,
     return out
 
 
-def _openai_embed(texts: list[str]) -> list[list[float]]:
+def _embed(texts: list[str]) -> list[list[float]]:
     r = requests.post(f"{config.LLM_BASE_URL.rstrip('/')}/embeddings",
                       json={"model": config.EMBED_MODEL, "input": texts},
                       headers=_headers(), timeout=300)
@@ -163,20 +144,20 @@ def _openai_embed(texts: list[str]) -> list[list[float]]:
 
 # ---- dispatch ------------------------------------------------------------
 
-NO_MODEL = ("No model is configured (FD_LLM_PROVIDER=none). The dashboard "
-            "does not use one; only the narrated answers at /ask do.")
+NO_MODEL = (
+    "No model is configured: FD_CHAT_MODEL is empty, or FD_LLM_BASE_URL is. "
+    "The dashboard does not use one; only the narrated answers at /ask do. "
+    "Run `python -m filingdesk.models` to list what the endpoint serves.")
 
-NO_MODEL_NAME = (
-    "A model endpoint is configured but no model name was chosen "
-    "(FD_CHAT_MODEL is empty). Run `python -m filingdesk.models` to list what "
-    "this endpoint serves, then set FD_CHAT_MODEL to one of them.")
+NO_EMBED_MODEL = (
+    "No embedding model is configured (FD_EMBED_MODEL is empty), so there is "
+    "nothing to index the vault with. The endpoint this app defaults to serves "
+    "chat models only.")
 
 
 def _guard_config() -> None:
     if not config.model_enabled():
         raise LLMError(NO_MODEL)
-    if not config.CHAT_MODEL:
-        raise LLMError(NO_MODEL_NAME)
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None,
@@ -184,21 +165,17 @@ def chat(messages: list[dict], tools: list[dict] | None = None,
     """`effort` and `model` override the budget and the model for one call.
 
     Planning and drafting are both chat calls but want different settings —
-    see config.REASONING_EFFORT and config.PLAN_CHAT_MODEL. Ollama has no
-    reasoning knob, so `effort` is ignored on that path; `model` is not, and
-    both paths honour it.
+    see config.REASONING_EFFORT and config.PLAN_CHAT_MODEL.
     """
     _guard_config()
-    if config.LLM_PROVIDER == "openai":
-        return _openai_chat(messages, tools, effort, model)
-    return _ollama_chat(messages, tools, model)
+    return _chat(messages, tools, effort, model)
 
 
 def embed(texts: list[str]) -> list[list[float]]:
     _guard_config()
-    if config.LLM_PROVIDER == "openai":
-        return _openai_embed(texts)
-    return _ollama_embed(texts)
+    if not config.EMBED_MODEL:
+        raise LLMError(NO_EMBED_MODEL)
+    return _embed(texts)
 
 
 def ping() -> tuple[bool, str]:
@@ -209,14 +186,11 @@ def ping() -> tuple[bool, str]:
     if not config.model_enabled():
         return False, "not configured"
     try:
-        if config.LLM_PROVIDER == "openai":
-            r = requests.get(f"{config.LLM_BASE_URL.rstrip('/')}/models",
-                             headers=_headers(), timeout=4)
-            if r.status_code == 401:
-                return False, "rejected the API key"
-            return r.status_code < 400, f"HTTP {r.status_code}"
-        r = requests.get(f"{config.OLLAMA}/api/tags", timeout=2)
-        return r.status_code == 200, f"HTTP {r.status_code}"
+        r = requests.get(f"{config.LLM_BASE_URL.rstrip('/')}/models",
+                         headers=_headers(), timeout=4)
+        if r.status_code == 401:
+            return False, "rejected the API key"
+        return r.status_code < 400, f"HTTP {r.status_code}"
     except requests.RequestException as e:
         return False, type(e).__name__
 
@@ -224,7 +198,5 @@ def ping() -> tuple[bool, str]:
 def describe() -> str:
     if not config.model_enabled():
         return "no model"
-    if config.LLM_PROVIDER == "openai":
-        host = config.LLM_BASE_URL.split("//")[-1].split("/")[0]
-        return f"{config.CHAT_MODEL or 'no model chosen'} @ {host}"
-    return f"{config.CHAT_MODEL} @ ollama"
+    host = config.LLM_BASE_URL.split("//")[-1].split("/")[0]
+    return f"{config.CHAT_MODEL} @ {host}"

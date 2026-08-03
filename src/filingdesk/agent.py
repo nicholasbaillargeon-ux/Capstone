@@ -57,7 +57,8 @@ class ModelUnavailable(AgentError):
 NO_MODEL_MSG = (
     "The language model could not be reached, so no written answer was "
     "produced. This does not affect the figures — the dashboard charts every "
-    "filed number without a model. Start Ollama to enable narrated answers.")
+    "filed number without a model. Check the endpoint with "
+    "`python -m filingdesk.models --check` to enable narrated answers.")
 
 
 def mcp_env() -> dict[str, str]:
@@ -349,7 +350,7 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
         # has to be dug out rather than inferred from the outermost type.
         if any(isinstance(e, ModelUnavailable) for e in flat):
             timing["total"] = int((time.time() - t0) * 1000)
-            log.error("model.unavailable", host=config.OLLAMA)
+            log.error("model.unavailable", endpoint=config.LLM_BASE_URL)
             return _refuse(trace_id, "model_unavailable", NO_MODEL_MSG, timing,
                            question=question, ticker=ticker)
         causes = "; ".join(f"{type(e).__name__}: {e}" for e in flat)

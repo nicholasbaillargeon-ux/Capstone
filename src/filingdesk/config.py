@@ -31,7 +31,10 @@ def _load_dotenv() -> None:
         key, value = key.strip(), value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        if key and value and key not in os.environ:
+        # Empty values are kept, not skipped: `FD_CHAT_MODEL=` is how this file
+        # says "no model", and dropping it would silently restore the default
+        # it was written to turn off.
+        if key and key not in os.environ:
             os.environ[key] = value
 
 
@@ -43,32 +46,18 @@ VAULT_DB = ROOT / "vault.db"
 VAULT_DIR = os.environ.get("FD_VAULT_DIR", str(Path.home() / "brain"))
 
 # ---- the model ------------------------------------------------------------
-# "none"   dashboard only. Not a degraded state: charts, figures, ratios and
-#          provenance never touch a model, so this is a complete surface on
-#          its own and the UI says so plainly rather than warning about it.
-# "ollama" keeps everything on this machine.
-# "openai" any OpenAI-compatible endpoint — Fireworks, Together, Groq,
-#          OpenRouter, vLLM, llama.cpp's server, LM Studio — which is how you
-#          run a bigger open-weights model than local RAM allows. See llm.py
-#          for what that trades away.
-LLM_PROVIDER = os.environ.get("FD_LLM_PROVIDER", "ollama").strip().lower()
-if LLM_PROVIDER in ("", "none", "off", "disabled"):
-    LLM_PROVIDER = "none"
+# One endpoint: the LiteLLM proxy on the homelab, which is OpenAI-compatible
+# and fronts whichever open-weights models it is configured to serve. There is
+# no second provider and no local-inference path — an Ollama on the app host
+# meant a 7B model where the proxy offers a 120B one, and keeping both meant
+# every call site reasoning about which shape it was talking to.
+#
+# Point FD_LLM_BASE_URL at any other OpenAI-compatible endpoint (vLLM,
+# llama.cpp's server, LM Studio, a hosted API) and nothing else changes.
+LITELLM_URL = "https://litellm.baillargeon.casa/v1"
 
-
-def model_enabled() -> bool:
-    """Derived, never stored: a cached copy of this can disagree with
-    LLM_PROVIDER, and then the app refuses to answer while the health chip
-    insists a model is configured."""
-    return LLM_PROVIDER != "none"
-
-OLLAMA = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-
-LLM_BASE_URL = os.environ.get("FD_LLM_BASE_URL",
-                              "https://api.fireworks.ai/inference/v1")
+LLM_BASE_URL = os.environ.get("FD_LLM_BASE_URL", LITELLM_URL).strip()
 LLM_API_KEY = os.environ.get("FD_LLM_API_KEY", "")
-
-FIREWORKS_URL = "https://api.fireworks.ai/inference/v1"
 
 # How hard the model is asked to think before answering. Reasoning models
 # (gpt-oss, o-series, and anything LiteLLM maps onto them) spend real wall
@@ -107,25 +96,40 @@ if REASONING_EFFORT in ("none", "off", "default"):
 if PLAN_REASONING_EFFORT in ("none", "off", "default"):
     PLAN_REASONING_EFFORT = ""
 
-# A default model name is only meaningful when we know whose catalogue it
-# refers to. Fireworks' IDs are verified against their own listing
-# (deepseek-v4-pro is their top pick for tool-using agents, which is what this
-# app is) — but on a self-hosted LiteLLM proxy the names are whatever that
-# proxy defines, so guessing one produces a confident 404 instead of an
-# answer. Unknown endpoint => no default; `python -m filingdesk.models` lists
-# what is actually there.
-_DEFAULT_MODELS = {
-    "none": ("", ""),
-    "ollama": ("qwen2.5:7b-instruct-q4_K_M", "nomic-embed-text"),
-    "openai": (("accounts/fireworks/models/deepseek-v4-pro",
-                "accounts/fireworks/models/qwen3-embedding-8b")
-               if LLM_BASE_URL.rstrip("/") == FIREWORKS_URL else ("", "")),
-}
-_chat_default, _embed_default = _DEFAULT_MODELS.get(
-    LLM_PROVIDER, _DEFAULT_MODELS["ollama"])
+# A default model name only means something against a known catalogue: on an
+# endpoint that has never heard of it, a guess produces a confident 404 instead
+# of an answer. So the default holds only for the proxy this app is pointed at,
+# where the name is verified — anywhere else, no default, and
+# `python -m filingdesk.models` lists what is actually served.
+_LITELLM_CHAT = "gpt-oss-120b"
 
-CHAT_MODEL = os.environ.get("FD_CHAT_MODEL", "").strip() or _chat_default
-EMBED_MODEL = os.environ.get("FD_EMBED_MODEL", "").strip() or _embed_default
+# Absent and empty mean different things. Absent is "you pick" — the default
+# applies, but only against the endpoint the name was verified on. Present and
+# empty is a decision: no narrated answers, dashboard only, and the default
+# must not quietly override it.
+_chat_env = os.environ.get("FD_CHAT_MODEL")
+CHAT_MODEL = _chat_env.strip() if _chat_env is not None else (
+    _LITELLM_CHAT if LLM_BASE_URL.rstrip("/") == LITELLM_URL else "")
+
+# No default, deliberately: the proxy serves chat models and no embedding
+# model, and naming one it does not have turns every vault index into a 404.
+# Empty is a real setting — retrieval over the vault is simply off — which is
+# why it is read without falling back to anything.
+EMBED_MODEL = os.environ.get("FD_EMBED_MODEL", "").strip()
+
+
+def model_enabled() -> bool:
+    """Whether a narrated answer is possible at all.
+
+    Derived, never stored: a cached copy can disagree with the settings it was
+    derived from, and then the app refuses to answer while the health chip
+    insists a model is configured.
+
+    Dashboard-only is a supported configuration, not a degraded one — charts,
+    figures, ratios and provenance never touch a model — and it is what an
+    empty FD_CHAT_MODEL or FD_LLM_BASE_URL selects.
+    """
+    return bool(LLM_BASE_URL and CHAT_MODEL)
 
 # Planning and drafting can run on different models. Selecting a tool from four
 # is a smaller job than transcribing figures without mangling them, and the
@@ -142,10 +146,6 @@ PLAN_CHAT_MODEL = os.environ.get("FD_PLAN_CHAT_MODEL", "").strip() or CHAT_MODEL
 STOP_ON_FIRST_FACTS = os.environ.get(
     "FD_STOP_ON_FIRST_FACTS", "").strip().lower() in ("1", "true", "yes", "on")
 
-
-def model_configured() -> bool:
-    """Enabled AND actually told which model to call."""
-    return model_enabled() and bool(CHAT_MODEL)
 
 # Where this instance is mounted. Empty by default: the app owns "/" and every
 # URL it writes is absolute from there.

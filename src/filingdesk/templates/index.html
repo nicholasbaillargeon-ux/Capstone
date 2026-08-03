@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Filing Desk</title>
-<link rel="stylesheet" href="{{ base }}/static/app.css">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
 {# Not deferred — the saved theme is stamped before first paint. #}
-<script src="{{ base }}/static/theme.js"></script>
-<script src="{{ base }}/static/htmx.min.js"></script>
-<script src="{{ base }}/static/htmx-ext-sse.js"></script>
+<script src="{{ asset('theme.js') }}"></script>
+<script src="{{ asset('htmx.min.js') }}"></script>
+<script src="{{ asset('htmx-ext-sse.js') }}"></script>
 </head>
 <body>
 <div class="page">
@@ -68,9 +68,9 @@
       with no model involved at any point.
     </p>
     <p>
-      To enable answers, set <code>FD_LLM_PROVIDER</code> to <code>ollama</code>
-      or <code>openai</code> in <code>.env</code>, then confirm with
-      <code>python -m filingdesk.models --check</code>.
+      To enable answers, set <code>FD_CHAT_MODEL</code> — and the
+      <code>FD_LLM_API_KEY</code> the endpoint wants — in <code>.env</code>,
+      then confirm with <code>python -m filingdesk.models --check</code>.
     </p>
   </div>
   {% endif %}
