@@ -99,3 +99,17 @@ def test_an_unknown_string_is_left_alone():
     """So the refusal quotes what was actually asked for, rather than the
     nearest company to a typo."""
     assert api.as_ticker("zzzqqq") == "ZZZQQQ"
+
+
+def test_a_working_model_gets_no_chip(client, monkeypatch):
+    """It named itself in green on both pages. The states worth surfacing are
+    the two that change what the page can do: no model by choice, and a model
+    that should be answering and is not."""
+    monkeypatch.setattr(config, "CHAT_MODEL", "gpt-oss-120b")
+    html = client.get("/api/health/html").text
+    assert "gpt-oss-120b" not in html
+    assert "chip-ok" in html          # the readiness chip stays
+
+    monkeypatch.setattr(llm, "ping", lambda: (False, "ConnectionError"))
+    offline = client.get("/api/health/html").text
+    assert "model offline" in offline and "gpt-oss-120b" in offline

@@ -34,6 +34,16 @@ log = logging_setup.log
 MAX_TOOL_STEPS = 4
 MAX_REJECTIONS = 3
 
+# One re-ask when the planner calls nothing at all and has nothing to show for
+# it. Measured on eval case E5, the prompt-injection question: the planner
+# returns zero tool calls on roughly two runs in three, and the request refuses
+# a question whose figures are cached and one tool call away. Nudging costs a
+# round trip on the runs that need it and nothing on the runs that do not.
+#
+# One, not more: a planner that declines twice is declining, and a loop of
+# re-asks would turn a fast refusal into a slow one.
+MAX_PLAN_NUDGES = 1
+
 # The MCP SDK does NOT hand the parent environment to the server subprocess —
 # it starts from a minimal safe set. Found by the smoke test: in the container
 # FD_ROOT=/data never arrived, so the server opened an empty database at a
@@ -232,6 +242,7 @@ async def gather_facts(sess, question: str, ticker: str
                 {"role": "user", "content": f"Ticker: {ticker}. {question}"}]
     facts: list[dict] = []
     rejections = 0
+    nudges = 0
     last_error_kind: str | None = None
 
     for step in range(MAX_TOOL_STEPS):
@@ -247,7 +258,18 @@ async def gather_facts(sess, question: str, ticker: str
         messages.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:
-            log.info("plan.done", step=step, facts=len(facts))
+            # No calls WITH facts in hand is the normal exit: the plan is
+            # finished. No calls with NOTHING in hand is the planner declining
+            # the turn, and refusing on it reports a model's reticence as an
+            # absence of filings. Ask once more, then take the answer.
+            if not facts and nudges < MAX_PLAN_NUDGES:
+                nudges += 1
+                log.info("plan.nudged", step=step)
+                messages.append({"role": "user",
+                                 "content": prompts.NO_TOOLS_YET})
+                continue
+            log.info("plan.done", step=step, facts=len(facts),
+                     nudged=bool(nudges))
             break
 
         for call in calls:

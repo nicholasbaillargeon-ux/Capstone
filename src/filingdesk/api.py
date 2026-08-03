@@ -360,6 +360,10 @@ def health_html() -> HTMLResponse:
     bits = [f'<span class="chip {cls}">{state}</span>',
             f'<span class="chip">{h["facts_loaded"] or 0:,} facts</span>',
             f'<span class="chip">{h["universe"]:,} tickers</span>']
+    # A working model gets no chip. It named itself in green on every page,
+    # which read as a status worth watching when it is only the answer to a
+    # question nobody asked — the two states worth surfacing are "no model,
+    # by choice" and "a model that should be there is not".
     label = html_escape(h["model_label"])
     if not h["model_enabled"]:
         # Deliberately no model. Styling this as a warning would report a
@@ -367,9 +371,7 @@ def health_html() -> HTMLResponse:
         bits.append('<span class="chip" title="Every figure here is retrieved '
                     'and every ratio computed in Python. No model is involved '
                     'in this view.">dashboard only · no model</span>')
-    elif h["model_online"]:
-        bits.append(f'<span class="chip chip-ok">{label}</span>')
-    else:
+    elif not h["model_online"]:
         bits.append(f'<span class="chip chip-warn" title="Charts and figures '
                     f'work without it; only the written answer needs a model. '
                     f'({html_escape(h["model_detail"])})">'
