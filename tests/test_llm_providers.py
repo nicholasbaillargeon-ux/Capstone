@@ -290,3 +290,13 @@ def test_the_stubs_match_the_signatures_they_replace():
         assert list(got) == list(want), f"{fake.__name__} vs {real.__name__}"
         for name, p in want.items():
             assert got[name].default == p.default, f"{fake.__name__}({name})"
+
+
+def test_the_proxy_is_known_by_both_of_its_names():
+    """One instance, two names: the LAN's .casa zone and the tailnet's
+    MagicDNS. A deployed container resolves the second and not the first, and
+    a model name verified against the proxy is verified either way — so the
+    default model must not depend on which name the request arrived by."""
+    assert config.LITELLM_URL in config.KNOWN_PROXIES
+    assert config.LITELLM_TAILNET_URL in config.KNOWN_PROXIES
+    assert "ts.net" in config.LITELLM_TAILNET_URL

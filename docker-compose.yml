@@ -21,7 +21,11 @@ services:
       # There is no Ollama here any more: it lived on the host because CPU
       # inference gains nothing from a container, and it served a 7B model
       # where the proxy serves a 120B one.
-      FD_LLM_BASE_URL: ${FD_LLM_BASE_URL:-https://litellm.baillargeon.casa/v1}
+      # Over the tailnet: a container resolves MagicDNS but not the LAN's
+      # internal .casa zone, so the name that works from a workstation fails
+      # in here. Set FD_LLM_BASE_URL in .env for a host that is not on the
+      # tailnet — it is the same proxy either way.
+      FD_LLM_BASE_URL: ${FD_LLM_BASE_URL:-https://litellm.end-toad.ts.net/v1}
       # Empty is safe: _headers() sends no Authorization when it is falsy,
       # which is what a keyless local endpoint (vLLM, LM Studio) wants.
       # Interpolated from .env, never written into this file: .env is

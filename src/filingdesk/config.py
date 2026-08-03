@@ -56,6 +56,15 @@ VAULT_DIR = os.environ.get("FD_VAULT_DIR", str(Path.home() / "brain"))
 # llama.cpp's server, LM Studio, a hosted API) and nothing else changes.
 LITELLM_URL = "https://litellm.baillargeon.casa/v1"
 
+# The same proxy, reached over the tailnet. Deployed containers use this one:
+# they resolve MagicDNS but not the LAN's internal .casa zone, so the name a
+# workstation uses is a DNS failure inside the container. Two names for one
+# instance, which is why both are known here — a model name verified against
+# the proxy is verified whichever way the request arrived.
+LITELLM_TAILNET_URL = "https://litellm.end-toad.ts.net/v1"
+
+KNOWN_PROXIES = (LITELLM_URL, LITELLM_TAILNET_URL)
+
 LLM_BASE_URL = os.environ.get("FD_LLM_BASE_URL", LITELLM_URL).strip()
 LLM_API_KEY = os.environ.get("FD_LLM_API_KEY", "")
 
@@ -109,7 +118,7 @@ _LITELLM_CHAT = "gpt-oss-120b"
 # must not quietly override it.
 _chat_env = os.environ.get("FD_CHAT_MODEL")
 CHAT_MODEL = _chat_env.strip() if _chat_env is not None else (
-    _LITELLM_CHAT if LLM_BASE_URL.rstrip("/") == LITELLM_URL else "")
+    _LITELLM_CHAT if LLM_BASE_URL.rstrip("/") in KNOWN_PROXIES else "")
 
 # No default, deliberately: the proxy serves chat models and no embedding
 # model, and naming one it does not have turns every vault index into a 404.

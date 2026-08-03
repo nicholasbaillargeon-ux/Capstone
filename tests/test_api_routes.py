@@ -113,3 +113,14 @@ def test_a_working_model_gets_no_chip(client, monkeypatch):
     monkeypatch.setattr(llm, "ping", lambda: (False, "ConnectionError"))
     offline = client.get("/api/health/html").text
     assert "model offline" in offline and "gpt-oss-120b" in offline
+
+
+def test_the_landing_page_names_the_proxy_not_its_hostname(client, monkeypatch):
+    """Either name is the same LiteLLM. Printing a tailnet hostname in the
+    stack row would be an accident of deployment, not a fact about the app."""
+    monkeypatch.setattr(config, "LLM_BASE_URL", config.LITELLM_TAILNET_URL)
+    assert "LiteLLM" in client.get("/").text
+    assert "end-toad.ts.net" not in client.get("/").text
+
+    monkeypatch.setattr(config, "LLM_BASE_URL", "https://vllm.example/v1")
+    assert "vllm.example" in client.get("/").text

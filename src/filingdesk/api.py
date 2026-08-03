@@ -242,7 +242,7 @@ def landing() -> HTMLResponse:
     ]
     stack = ["Python", "XBRL company facts", "SEC EDGAR"]
     if h["model_enabled"]:
-        endpoint = ("LiteLLM" if config.LLM_BASE_URL == config.LITELLM_URL
+        endpoint = ("LiteLLM" if config.LLM_BASE_URL in config.KNOWN_PROXIES
                     else config.LLM_BASE_URL.split("//")[-1].split("/")[0])
         stack += [config.CHAT_MODEL, endpoint]
     return HTMLResponse(web.render(
