@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Filing Desk — what companies actually reported</title>
-<link rel="stylesheet" href="{{ base }}/static/app.css">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
 {# Not deferred: the saved theme must be stamped on <html> before first
    paint, or dark-mode users get a light flash on every load. #}
-<script src="{{ base }}/static/theme.js"></script>
-<script src="{{ base }}/static/charts.js" defer></script>
-<script src="{{ base }}/static/dashboard.js" defer></script>
+<script src="{{ asset('theme.js') }}"></script>
+<script src="{{ asset('charts.js') }}" defer></script>
+<script src="{{ asset('dashboard.js') }}" defer></script>
 </head>
 <body data-ticker="{{ ticker }}" data-base="{{ base }}">
 <div class="page">

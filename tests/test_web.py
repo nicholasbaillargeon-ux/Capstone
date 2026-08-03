@@ -6,6 +6,7 @@ obvious implementation — replace claim text everywhere — corrupts the citati
 anchors when a claim happens to look like a fact id.
 """
 import asyncio
+import re
 
 import pytest
 
@@ -133,9 +134,11 @@ def _reload_config(monkeypatch, value):
 @pytest.fixture
 def restore_config():
     import importlib
+    import os
 
     from filingdesk import config
     yield
+    os.environ.pop("FD_BASE_PATH", None)
     importlib.reload(config)
 
 
@@ -151,12 +154,18 @@ def test_base_path_normalises_to_one_leading_slash(monkeypatch, restore_config,
     assert _reload_config(monkeypatch, given).BASE_PATH == expected
 
 
-def test_dashboard_urls_carry_the_prefix():
+@pytest.fixture
+def mounted(monkeypatch):
+    from filingdesk import config
+    monkeypatch.setattr(config, "BASE_PATH", "/filing-desk")
+
+
+def test_dashboard_urls_carry_the_prefix(mounted):
     html = web.render("dashboard.html", base="/filing-desk", stub=False,
                       ticker="NVDA", model_enabled=True,
                       featured=["NVDA"], universe=10432)
-    assert 'href="/filing-desk/static/app.css"' in html
-    assert 'src="/filing-desk/static/dashboard.js"' in html
+    assert 'href="/filing-desk/static/app.css?v=' in html
+    assert 'src="/filing-desk/static/dashboard.js?v=' in html
     assert 'href="/filing-desk/ask"' in html
     # the wordmark goes back to the landing page, which owns the mount point
     assert 'href="/filing-desk/"' in html
@@ -179,7 +188,9 @@ def test_the_way_out_appears_only_when_something_owns_the_root():
     assert "← Showcase" not in _landing()
     mounted = _landing(base="/filing-desk", app_url="/filing-desk/app",
                        showcase_url="/")
-    assert 'class="showcase-link" href="/"' in mounted
+    assert 'id="__showcase_link" href="/"' in mounted
+    # Styled inline, like both siblings: a stale stylesheet cannot unstyle it.
+    assert "position:fixed" in mounted
     assert "← Showcase" in mounted
 
 
@@ -191,18 +202,36 @@ def test_the_dashboard_offers_the_way_back_to_the_landing_page():
         in html
 
 
-def test_landing_urls_carry_the_prefix():
+def test_landing_urls_carry_the_prefix(mounted):
     html = _landing(base="/filing-desk", app_url="/filing-desk/app")
-    assert 'href="/filing-desk/static/landing.css"' in html
+    assert 'href="/filing-desk/static/landing.css?v=' in html
     assert 'href="/filing-desk/app?ticker=NVDA"' in html
     assert 'href="/filing-desk/ask"' in html
+
+
+def test_static_urls_are_keyed_to_their_contents():
+    """A stylesheet and the markup needing it ship together but cache apart —
+    the CDN in front of the deployed page served one against the other. The
+    URL changes when the bytes do, so there is nothing stale to serve."""
+    from filingdesk import web as w
+    first = w.asset("landing.css")
+    assert re.search(r"/static/landing\.css\?v=[0-9a-f]{12}$", first)
+    assert w.asset("landing.css") == first          # stable within a process
+    assert w.asset("app.css") != first              # and per file
+
+
+def test_a_missing_asset_still_renders_the_page():
+    """A broken asset is a 404 either way. Refusing to render over it would
+    turn one missing file into a blank site."""
+    from filingdesk import web as w
+    assert w.asset("does-not-exist.css").endswith("?v=0")
 
 
 def test_unmounted_urls_stay_at_the_root():
     """The default is no prefix, and it must not leave a stray slash behind."""
     html = web.render("dashboard.html", base="", stub=False, ticker="NVDA",
                       model_enabled=True, featured=["NVDA"], universe=1)
-    assert 'href="/static/app.css"' in html
+    assert 'href="/static/app.css?v=' in html
     assert "//static" not in html
 
 

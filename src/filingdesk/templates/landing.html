@@ -7,7 +7,7 @@
 <meta name="description" content="Answers about public companies drawn from
       SEC XBRL filings. Every figure is retrieved from a specific filing and
       every ratio computed in Python — none are generated.">
-<link rel="stylesheet" href="{{ base }}/static/landing.css">
+<link rel="stylesheet" href="{{ asset('landing.css') }}">
 </head>
 <body>
 
@@ -89,7 +89,7 @@
       <span class="path">filing-desk — {{ featured[0] }} · quarterly · 12 periods</span>
     </div>
     <div class="shot-frame">
-      <img src="{{ base }}/static/landing-hero.png" width="3136" height="3089"
+      <img src="{{ asset('landing-hero.png') }}" width="3136" height="3089"
            alt="The Filing Desk dashboard showing NVIDIA quarterly fundamentals:
                 revenue, margin, income and free cash flow cards over a margin
                 profile chart.">
@@ -219,12 +219,25 @@
 </footer>
 
 {% if showcase_url %}
-{# The way out of this app entirely. Both sibling apps in the combined
-   showcase float the same pill in the same corner — they inject it with
-   JavaScript because their landing pages are bundles that rebuild the DOM
-   after load; this one is a template, so it is just markup. #}
-<a class="showcase-link" href="{{ showcase_url }}"
-   title="Back to the showcase">← Showcase</a>
+{# The way out of this app entirely.
+
+   Styled inline, byte for byte the same declarations the two sibling apps
+   apply to their own pill, because this is the showcase's affordance rather
+   than this page's: all three should be the same object in the same corner.
+   Inline is also what makes that true on first paint — the rule cannot be
+   the one thing a proxy is still serving a stale copy of, which is exactly
+   what happened when it lived in landing.css.
+
+   The siblings inject this with JavaScript; their landing pages are bundles
+   that rebuild the DOM after load and drop appended nodes. This one is a
+   template, so it is rendered, and it survives with JavaScript off. #}
+<a id="__showcase_link" href="{{ showcase_url }}" title="Back to the showcase"
+   style="position:fixed;bottom:16px;left:16px;z-index:2147483647;
+          font:600 13px/1 -apple-system,BlinkMacSystemFont,sans-serif;
+          color:#12332a;background:rgba(244,239,227,.94);padding:9px 15px;
+          border:1px solid rgba(18,51,42,.25);border-radius:999px;
+          text-decoration:none;box-shadow:0 2px 10px rgba(0,0,0,.18)"
+   >← Showcase</a>
 {% endif %}
 
 </body>

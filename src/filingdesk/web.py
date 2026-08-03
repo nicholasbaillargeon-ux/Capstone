@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import html
 import re
 import time
@@ -33,7 +34,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from . import agent, history
+from . import agent, config, history
 
 TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
@@ -46,6 +47,35 @@ env = Environment(
 )
 
 CITE = re.compile(r"\[\[fact:(\d+)\]\]")
+
+# Content-addressed static URLs. A stylesheet and the markup that needs it ship
+# in the same deploy but are cached separately: the page in front of this one
+# sits behind a CDN that held landing.css for hours after the HTML that
+# referenced a new rule had already changed. Keying the URL to the bytes means
+# a changed file is a different URL and there is nothing stale to serve.
+#
+# Computed once per file per process: these do not change under a running
+# server, and hashing the 500 KB screenshot on every render would be silly.
+_ASSET_V: dict[str, str] = {}
+
+
+def asset(name: str) -> str:
+    """A cache-busted, prefix-aware URL for one file under static/."""
+    v = _ASSET_V.get(name)
+    if v is None:
+        try:
+            v = hashlib.blake2b((STATIC / name).read_bytes(),
+                                digest_size=6).hexdigest()
+        except OSError:
+            # A missing file is a 404 either way; refusing to render the whole
+            # page over it would turn a broken asset into a broken site.
+            v = "0"
+        _ASSET_V[name] = v
+    return f"{config.BASE_PATH}/static/{name}?v={v}"
+
+
+env.globals["asset"] = asset
+
 HEARTBEAT = 2.0
 
 # Ordered: the rail renders in pipeline order, not arrival order.

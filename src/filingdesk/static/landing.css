@@ -6,17 +6,23 @@
    two stylesheets would mean either the front door inherits a theme it has no
    control over, or the app grows tokens only one page uses.
 
-   Fonts are served from /static/fonts rather than Google's CDN. The whole
-   point of the thing behind this page is that it runs on one box with the
-   filings cached locally; a front door that blanks out without internet
-   would undercut it. Only the latin and latin-ext subsets ship. */
+   Fonts are served from ./fonts rather than Google's CDN. The whole point of
+   the thing behind this page is that it runs on one box with the filings
+   cached locally; a front door that blanks out without internet would
+   undercut it. Only the latin and latin-ext subsets ship.
+
+   Those URLs are relative to THIS FILE, not to the site root. Mounted under a
+   prefix the stylesheet is served from <prefix>/static/, and a root-absolute
+   /static/fonts/… resolved past the prefix to whatever owns the root — which
+   is how the deployed page ended up rendering in fallback faces while every
+   font it asked for 404'd. */
 
 @font-face {
   font-family: "JetBrains Mono";
   font-style: normal;
   font-weight: 400 700;
   font-display: swap;
-  src: url("/static/fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  src: url("fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
     U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
     U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
@@ -27,7 +33,7 @@
   font-style: normal;
   font-weight: 400 700;
   font-display: swap;
-  src: url("/static/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  src: url("fonts/jetbrains-mono-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
     U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
     U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -37,7 +43,7 @@
   font-style: normal;
   font-weight: 400 500;
   font-display: swap;
-  src: url("/static/fonts/newsreader-latin-ext.woff2") format("woff2");
+  src: url("fonts/newsreader-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
     U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
     U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
@@ -48,7 +54,7 @@
   font-style: normal;
   font-weight: 400 500;
   font-display: swap;
-  src: url("/static/fonts/newsreader-latin.woff2") format("woff2");
+  src: url("fonts/newsreader-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
     U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
     U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -58,7 +64,7 @@
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url("/static/fonts/newsreader-italic-latin-ext.woff2") format("woff2");
+  src: url("fonts/newsreader-italic-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
     U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
     U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
@@ -69,7 +75,7 @@
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url("/static/fonts/newsreader-italic-latin.woff2") format("woff2");
+  src: url("fonts/newsreader-italic-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
     U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
     U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -524,29 +530,6 @@ footer {
 .disclaimer em { color: var(--ink-4); font-style: normal; }
 
 .footer-link { font-size: 12.5px; color: var(--accent); white-space: nowrap; }
-
-/* ---- back to the showcase ----------------------------------------------
-   Deliberately not styled to this page. It is the showcase's own affordance,
-   and it is the same pill in the same corner on all three apps — a visitor
-   should recognise it as "out of here", not as part of whichever app they
-   happen to be looking at. */
-
-.showcase-link {
-  position: fixed;
-  bottom: 16px;
-  left: 16px;
-  z-index: 2147483647;
-  font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
-  color: #12332a;
-  background: rgba(244, 239, 227, 0.94);
-  padding: 9px 15px;
-  border: 1px solid rgba(18, 51, 42, 0.25);
-  border-radius: 999px;
-  text-decoration: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-}
-
-.showcase-link:hover { color: #12332a; background: #f4efe3; }
 
 /* ---- synthetic-mode banner --------------------------------------------- */
 
