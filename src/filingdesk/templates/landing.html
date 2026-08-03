@@ -218,5 +218,14 @@
   </div>
 </footer>
 
+{% if showcase_url %}
+{# The way out of this app entirely. Both sibling apps in the combined
+   showcase float the same pill in the same corner — they inject it with
+   JavaScript because their landing pages are bundles that rebuild the DOM
+   after load; this one is a template, so it is just markup. #}
+<a class="showcase-link" href="{{ showcase_url }}"
+   title="Back to the showcase">← Showcase</a>
+{% endif %}
+
 </body>
 </html>

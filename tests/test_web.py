@@ -173,6 +173,24 @@ def test_ask_page_urls_carry_the_prefix():
     assert 'action="/filing-desk/report"' in html
 
 
+def test_the_way_out_appears_only_when_something_owns_the_root():
+    """Standalone, Filing Desk IS the root — a "← Showcase" pill there would
+    link the visitor to the page they are already on."""
+    assert "← Showcase" not in _landing()
+    mounted = _landing(base="/filing-desk", app_url="/filing-desk/app",
+                       showcase_url="/")
+    assert 'class="showcase-link" href="/"' in mounted
+    assert "← Showcase" in mounted
+
+
+def test_the_dashboard_offers_the_way_back_to_the_landing_page():
+    html = web.render("dashboard.html", base="/filing-desk", stub=False,
+                      ticker="NVDA", model_enabled=True, featured=["NVDA"],
+                      universe=1)
+    assert '<a class="ghost" href="/filing-desk/">← Back to the landing page</a>' \
+        in html
+
+
 def test_landing_urls_carry_the_prefix():
     html = _landing(base="/filing-desk", app_url="/filing-desk/app")
     assert 'href="/filing-desk/static/landing.css"' in html

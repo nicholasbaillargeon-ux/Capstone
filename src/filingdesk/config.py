@@ -163,6 +163,14 @@ BASE_PATH = "/" + os.environ.get("FD_BASE_PATH", "").strip().strip("/")
 if BASE_PATH == "/":
     BASE_PATH = ""
 
+# Where "back out of this app entirely" goes. Being mounted under a prefix is
+# what implies something else owns the root — in the combined showcase that is
+# the index the two sibling apps also link back to, and they make the same
+# inference. Set it explicitly to point elsewhere, or to "" to drop the link
+# on an instance that is mounted under a prefix with nothing above it.
+SHOWCASE_URL = os.environ.get("FD_SHOWCASE_URL",
+                              "/" if BASE_PATH else "").strip()
+
 # SEC requires a descriptive User-Agent with a real contact email.
 # No default. Failing loudly here is correct.
 SEC_UA = os.environ.get("SEC_USER_AGENT")

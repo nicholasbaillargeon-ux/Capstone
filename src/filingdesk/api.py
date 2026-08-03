@@ -246,6 +246,7 @@ def landing() -> HTMLResponse:
                   == "openai" else "Ollama"]
     return HTMLResponse(web.render(
         "landing.html", stub=STUB, base=config.BASE_PATH,
+        showcase_url=config.SHOWCASE_URL,
         app_url=f"{config.BASE_PATH}/app", featured=config.FEATURED,
         ready=h["ready"], facts=facts, universe=universe,
         model_enabled=h["model_enabled"], stats=stats, stack=stack))
