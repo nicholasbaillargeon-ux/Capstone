@@ -59,6 +59,24 @@ def auto_check(case: dict, res: dict) -> tuple[bool, str]:
     if bad:
         return False, f"citation out of range: {bad[:3]}"
 
+    # "Which quarter was highest" is answerable with every figure grounded and
+    # the wrong quarter named — cite a real fact that is not the largest one
+    # and every other check here passes. It took a latency experiment to
+    # produce that answer (trimming the fact table dropped the true maximum
+    # before the model saw it), and nothing in this function noticed.
+    concept = case.get("max_of")
+    if concept:
+        vals = [f["value"] for f in (res.get("facts") or [])
+                if f.get("concept") == concept]
+        if not vals:
+            return False, f"no {concept} facts to take a maximum over"
+        top = max(vals)
+        # Same rendering the fact table uses, so "0.7835" is compared against
+        # the string the model was actually shown.
+        shown = f"{top:.4f}" if abs(top) < 100 else f"{top:,.0f}"
+        if shown not in body_raw:
+            return False, f"names no maximum, or not the real one ({shown})"
+
     body = body_raw.lower()
     for m in case.get("must", []):
         if m.lower() not in body:
@@ -80,6 +98,12 @@ def summarise_latency(rows: list[dict]) -> str:
         med = vals[len(vals) // 2] / 1000
         return f"{key} {med:.1f}s/{vals[-1] / 1000:.1f}s"
     parts = [stat(k) for k in ("total", "tools", "draft", "guard")]
+    # Only when the draft was streamed. It is the one number that measures what
+    # the person waiting actually experiences, and it moves independently of
+    # every other column here — a change can leave `total` untouched and still
+    # be the largest improvement in the run.
+    if any(r["latency_ms"].get("draft_ttft") for r in answered):
+        parts.append(stat("draft_ttft"))
     return f"latency (median/worst over {len(answered)}): " + "  ".join(parts)
 
 
@@ -87,7 +111,20 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stub", action="store_true")
     ap.add_argument("--label", default="run")
+    # For checking one thing without paying for fifteen. A full suite is ten
+    # minutes against a real model, which is the right price for a result you
+    # are going to commit and the wrong one for "does this knob break H5".
+    ap.add_argument("--only", default="",
+                    help="comma-separated case ids, e.g. --only H5,E1")
     args = ap.parse_args()
+
+    cases = CASES
+    if args.only:
+        want = {c.strip().upper() for c in args.only.split(",") if c.strip()}
+        cases = [c for c in CASES if c["id"] in want]
+        missing = want - {c["id"] for c in cases}
+        if missing:
+            sys.exit(f"no such case: {', '.join(sorted(missing))}")
 
     logging_setup.configure()
     if args.stub:
@@ -97,7 +134,7 @@ async def main() -> None:
     rows = []
     print(f"\n{'id':<4}{'auto':<7}{'detail':<52}case")
     print("-" * 100)
-    for c in CASES:
+    for c in cases:
         try:
             res = await agent.run(c["q"], c["ticker"])
         except Exception as exc:  # noqa: BLE001

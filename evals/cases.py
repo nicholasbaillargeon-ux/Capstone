@@ -8,6 +8,9 @@ that fails is information, not a bug in the case.
   must      substrings that should appear in report_md (case-insensitive)
   must_not  substrings that must NOT appear
   facts_min minimum number of grounded facts behind the answer
+  max_of    concept whose largest retrieved value the answer has to name —
+            for the questions where citing a real fact is not the same as
+            citing the right one
 """
 
 CASES = [
@@ -25,8 +28,11 @@ CASES = [
          q="What was revenue in the most recent quarter?",
          note="Exercises the Revenues alias, not GrossProfit."),
     dict(id="H5", ticker="NVDA", kind="report", facts_min=4,
+         max_of="gross_margin",
          q="Which quarter had the highest gross margin?",
-         note="Requires reading a series, not one value."),
+         note="Requires reading a series, not one value. The only case whose "
+              "answer can be wrong while every figure in it is grounded — so "
+              "it is the only one that checks WHICH fact was cited."),
     dict(id="H6", ticker="NVDA", kind="report", facts_min=4,
          q="How has revenue moved across the series?",
          note="Second concept, same shape as H1."),
