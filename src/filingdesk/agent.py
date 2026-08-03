@@ -24,6 +24,7 @@ from . import (
     policy,
     prompts,
     provenance,
+    seed,
     toolcall,
     vault,
 )
@@ -181,6 +182,38 @@ def expected_tickers(question: str, ticker: str) -> set[str]:
     return {ticker.upper()} | found
 
 
+async def warm_cache(ticker: str | None) -> None:
+    """Load this company's filings HERE, before the tool that needs them runs.
+
+    The tools can load a cold company themselves, and standalone they do. In
+    the server they cannot, and the reason is DuckDB's locking: this process
+    keeps a read-only handle open to serve the dashboard, which is fine for
+    any number of concurrent readers but blocks the exclusive lock a WRITE
+    needs — and the MCP tools run in a subprocess. So the first question about
+    an uncached company had its fetch fail inside the subprocess, and the
+    request refused with "no filed figures could be retrieved" while the
+    dashboard could load the same company on demand.
+
+    Fetching in this process instead is not a workaround: db.writing() closes
+    the cached readers for the duration, which is exactly the coordination the
+    subprocess has no way to perform. Failures are logged and swallowed — an
+    unreachable EDGAR or an unknown ticker is the tool's answer to give, in
+    its own words, not a reason to lose the request here.
+    """
+    if not ticker:
+        return
+    try:
+        res = await asyncio.to_thread(seed.ensure, ticker)
+    except Exception as exc:  # noqa: BLE001 — the tool still gets to answer
+        log.warning("warm.failed", ticker=ticker, error=str(exc))
+        return
+    if not res.get("ok"):
+        log.info("warm.miss", ticker=ticker,
+                 error_kind=res.get("error_kind"), error=res.get("error"))
+    elif not res.get("cached"):
+        log.info("warm.loaded", ticker=ticker, facts=res.get("n_facts"))
+
+
 async def gather_facts(sess, question: str, ticker: str
                        ) -> tuple[list[dict], str | None]:
     listed = await sess.list_tools()
@@ -237,6 +270,8 @@ async def gather_facts(sess, question: str, ticker: str
 
             if dropped:
                 log.info("tool.args_dropped", tool=v.name, dropped=dropped)
+
+            await warm_cache(v.args.get("ticker"))
 
             t0 = time.time()
             try:
