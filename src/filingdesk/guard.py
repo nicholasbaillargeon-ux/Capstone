@@ -20,8 +20,15 @@ import re
 # still resolved to 1e9, but the UNVERIFIED list quoted a figure the answer
 # never contained. (interpretations() is anchored with $, so it backtracks
 # into the right branch and was never affected.)
-NUM = re.compile(r"\$?\d[\d,]*(?:\.\d+)?\s*(?:%|billion|bn|b|million|m|k)?",
-                 re.I)
+#
+# The word suffixes need a trailing \b for the same reason, one word further
+# on: "the prior quarter's 0.7500 but above" matched "0.7500 b", read it as
+# 0.75e9, and reported a fabricated figure the report never contained — which
+# fails an eval case for a claim nobody wrote. Any word beginning b/m/k does
+# it: "but", "more", "known". The boundary is on the word branches only; there
+# is no word boundary after "%", so a shared \b would break every percentage.
+NUM = re.compile(
+    r"\$?\d[\d,]*(?:\.\d+)?\s*(?:%|(?:billion|bn|b|million|m|k)\b)?", re.I)
 CITE = re.compile(r"\[\[fact:(\d+)\]\]")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 

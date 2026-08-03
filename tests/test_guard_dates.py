@@ -68,6 +68,35 @@ def test_a_figure_at_the_end_of_a_sentence_is_verified(sent, claim):
     assert [p["claim"] for p in problems] == [claim]
 
 
+# A hyphen is deliberately absent from this list: "12 million-dollar deals"
+# reads the suffix as a scale, and English does not settle whether it is one.
+# \b fires on the hyphen, so the figure is flagged rather than waved through —
+# the same direction the month-word lookahead above chose, and for the reason
+# stated there: a false negative hides a fabricated figure, a false positive
+# only costs a correct one.
+@pytest.mark.parametrize("word", ["but", "before", "by", "broadly",
+                                  "more", "meanwhile", "known", "keeping"])
+def test_a_word_after_a_figure_is_not_read_as_a_scale_suffix(word):
+    """Regression, found in eval case E4: NUM had no boundary after its word
+    suffixes, so "0.7500 but above" tokenised as "0.7500 b", resolved to
+    0.75e9, and was reported as a figure tracing to no fact. The report never
+    contained it — the guard invented the claim it then rejected."""
+    sent = f"The margin held at 0.7500[[fact:1]] {word} the trend was flat."
+    assert guard.check(sent, {1: 0.75}) == []
+
+
+@pytest.mark.parametrize("sent,claim", [
+    ("Revenue reached $999 billion but then fell[[fact:1]].", "$999 billion"),
+    ("Revenue reached $999b but then fell[[fact:1]].", "$999b"),
+    ("Revenue reached $999m, more than planned[[fact:1]].", "$999m"),
+])
+def test_a_real_suffix_still_scales_when_a_word_follows(sent, claim):
+    """The boundary must not cost the guard its scale handling: a fabricated
+    figure written with a suffix is still caught, and still quoted as written."""
+    problems = guard.check(sent, ALLOWED)
+    assert [p["claim"] for p in problems] == [claim]
+
+
 def test_a_day_that_is_also_a_real_figure_still_needs_its_citation():
     """31 as a standalone figure is unrelated to "January 31" and is judged
     on its own merits."""
