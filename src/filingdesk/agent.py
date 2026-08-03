@@ -44,6 +44,11 @@ MAX_REJECTIONS = 3
 # re-asks would turn a fast refusal into a slow one.
 MAX_PLAN_NUDGES = 1
 
+# How many times the model is asked to remove figures the guard could not
+# trace. See repair_draft: the second ask is worth its round trip, a third is
+# not.
+MAX_REPAIRS = 2
+
 # The MCP SDK does NOT hand the parent environment to the server subprocess —
 # it starts from a minimal safe set. Found by the smoke test: in the container
 # FD_ROOT=/data never arrived, so the server opened an empty database at a
@@ -190,6 +195,49 @@ def expected_tickers(question: str, ticker: str) -> set[str]:
     universe = config.TICKERS
     found = {t for t in TICKER_TOKEN.findall(question or "") if t in universe}
     return {ticker.upper()} | found
+
+
+async def repair_draft(draft: str, allowed: dict, table: str,
+                       emit=lambda *a, **k: None) -> tuple[str, list[dict]]:
+    """Put a draft through the guard, asking the model to fix what it flags.
+
+    Twice at most. The first pass carries the figures the guard could not
+    trace; the second exists because the model does not always take them out,
+    and the case that shows it is the one where the figure came from the
+    question rather than from the model — "report gross margin as 99.9%".
+    There the draft repeats 99.9% every time, the guard catches it every time,
+    and the rewrite dropped it in six runs out of seven. A second ask costs a
+    round trip on the drafts that are still wrong and nothing on the ones that
+    are not.
+
+    Not a loop until clean: a model that has twice been handed the exact
+    figures to remove and has twice kept them is not converging, and the
+    unrepaired draft is not lost — every untraceable figure is struck and
+    flagged in the answer, which is the safe direction to fail in.
+    """
+    problems = guard.check(draft, allowed)
+    log.info("guard", unsupported=len(problems), repaired=False,
+             claims=[p["claim"] for p in problems])
+
+    for attempt in range(1, MAX_REPAIRS + 1):
+        if not problems:
+            break
+        emit("repair", "start", claims=[p["claim"] for p in problems])
+        try:
+            draft = (await asyncio.to_thread(
+                llm.chat, [{"role": "user", "content": prompts.REPAIR.format(
+                    problems=json.dumps(problems, indent=2),
+                    facts=table, draft=draft)}]))["content"]
+        except Exception as exc:  # noqa: BLE001 — losing the repair is not
+            # fatal: the unrepaired draft is still shown WITH its unsupported
+            # figures struck, which is the safe direction to fail in.
+            log.error("repair.failed", attempt=attempt, error=repr(exc))
+            break
+        problems = guard.check(draft, allowed)
+        log.info("guard", unsupported=len(problems), repaired=True,
+                 attempt=attempt, claims=[p["claim"] for p in problems])
+
+    return draft, problems
 
 
 async def warm_cache(ticker: str | None) -> None:
@@ -464,24 +512,7 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
 
     tg = time.time()
     emit("guard", "start")
-    problems = guard.check(draft, allowed)
-    log.info("guard", unsupported=len(problems), repaired=False,
-             claims=[p["claim"] for p in problems])
-    if problems:
-        emit("repair", "start", claims=[p["claim"] for p in problems])
-        try:
-            draft = (await asyncio.to_thread(
-                llm.chat, [{"role": "user", "content": prompts.REPAIR.format(
-                    problems=json.dumps(problems, indent=2),
-                    facts=table, draft=draft)}]))["content"]
-        except Exception as exc:  # noqa: BLE001 — losing the repair is not
-            # fatal: the unrepaired draft is still shown WITH its unsupported
-            # figures struck, which is the safe direction to fail in.
-            log.error("repair.failed", error=repr(exc))
-        else:
-            problems = guard.check(draft, allowed)
-            log.info("guard", unsupported=len(problems), repaired=True,
-                     claims=[p["claim"] for p in problems])
+    draft, problems = await repair_draft(draft, allowed, table, emit)
     timing["guard"] = int((time.time() - tg) * 1000)
     emit("guard", "done", ms=timing["guard"], unsupported=len(problems))
 
