@@ -160,7 +160,18 @@ def harvest(payload: dict, facts: list[dict]) -> int:
                        and x["concept"] == f["concept"] for x in facts):
                 facts.append(dict(f))
     for s in payload.get("series", []):
-        facts.append({"concept": payload.get("metric", "metric"),
+        # Deduped on the same key as the filed facts above, which it was not:
+        # a plan that computes gross margin over 8 quarters and then over 20
+        # appends the 8 overlapping periods twice, and every duplicate is a
+        # row in the fact table, a row in the Sources panel, and a second
+        # [[fact:N]] the model may cite instead of the first. Nothing is lost
+        # by collapsing them — they are the same computation over the same
+        # period from the same inputs.
+        metric = payload.get("metric", "metric")
+        if any(x["accn"] == "computed" and x["end"] == s["period_end"]
+               and x["concept"] == metric for x in facts):
+            continue
+        facts.append({"concept": metric,
                       "value": s["value"], "end": s["period_end"],
                       "accn": "computed", "formula": s.get("formula", ""),
                       "derived": True})
@@ -178,6 +189,56 @@ def fact_table(facts: list[dict]) -> str:
         lines.append(f"[[fact:{i}]] {f['concept']} = {shown} "
                      f"(period ending {f['end']}, {f.get('accn')}){suffix}")
     return "\n".join(lines)
+
+
+def draft_table(facts: list[dict]) -> tuple[str, int]:
+    """The fact table as the DRAFT prompt sees it, optionally trimmed.
+
+    A plan that asks for twenty quarters of a ratio gets sixty facts — the
+    ratio, plus both filed inputs behind each one — for a question that names
+    two periods. Everything retrieved is still shown in Sources and still
+    checked by the guard; this only bounds what the model is asked to read.
+
+    Two properties this has to keep, and they are the reason it is not a
+    `[-N:]` slice:
+
+    **Indices never move.** A trimmed row keeps the number it has in the full
+    table, so `[[fact:41]]` means the same fact whether or not anything was
+    trimmed, and the guard — which is handed every fact, not this subset —
+    agrees with the citation.
+
+    **The ends survive.** "Compare the first and last quarter" is an eval case.
+    Keeping the tail and dropping the head would answer it with the wrong
+    quarter, which is a correctness bug wearing a latency fix's clothes. Each
+    concept keeps its earliest row and its most recent ones.
+
+    The omission is stated in the prompt rather than hidden. A model that
+    silently receives eight of twenty quarters will answer "which quarter was
+    highest" from the eight, confidently.
+    """
+    limit = config.DRAFT_FACTS_MAX
+    if limit <= 0 or len(facts) <= limit:
+        return fact_table(facts), 0
+
+    by_concept: dict[str, list[int]] = {}
+    for i, f in enumerate(facts):
+        by_concept.setdefault(f["concept"], []).append(i)
+
+    # Share the budget evenly across concepts, so a long ratio series cannot
+    # crowd out the one filed figure another tool returned.
+    per = max(2, limit // max(1, len(by_concept)))
+    keep: set[int] = set()
+    for idxs in by_concept.values():
+        keep.update(idxs if len(idxs) <= per else [idxs[0]] + idxs[-(per - 1):])
+
+    lines = fact_table(facts).split("\n")
+    kept = [lines[i] for i in sorted(keep)]
+    dropped = len(facts) - len(kept)
+    if dropped:
+        kept.append(f"({dropped} further retrieved facts are not shown here. "
+                    f"Do not describe this list as complete, and do not claim "
+                    f"a maximum, minimum or total over a series it truncates.)")
+    return "\n".join(kept), dropped
 
 
 TICKER_TOKEN = re.compile(r"\b[A-Z][A-Z0-9.\-]{1,5}\b")
@@ -487,16 +548,30 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
              top_score=round(passages[0]["score"], 3) if passages else None)
 
     table = fact_table(facts)
+    # The guard is handed every fact, not the trimmed set: a numeral is
+    # grounded if it traces to something that was RETRIEVED, and trimming is a
+    # decision about what to read, not about what is true.
     allowed = {i: f["value"] for i, f in enumerate(facts, 1)}
+    draft_tbl, dropped = draft_table(facts)
+    if dropped:
+        log.info("draft.trimmed", shown=len(facts) - dropped, dropped=dropped)
 
     td = time.time()
     emit("draft", "start")
+    draft_prompt = [{"role": "user", "content": prompts.DRAFT.format(
+        question=question, facts=draft_tbl,
+        passages="\n---\n".join(p["text"][:400] for p in passages)
+                 or "(none)")}]
+    # Streamed text crosses a thread boundary: llm.chat runs in a worker so the
+    # SSE heartbeat keeps beating, which means `emit` is called from off the
+    # event loop for these events and from on it for every other one. The
+    # callback here does nothing but forward; making that safe is the callback
+    # author's job, and web.stream's does it with call_soon_threadsafe.
+    on_token = (lambda piece: emit("draft", "token", text=piece)
+                ) if config.STREAM_DRAFT else None
     try:
-        reply = await asyncio.to_thread(
-            llm.chat, [{"role": "user", "content": prompts.DRAFT.format(
-                question=question, facts=table,
-                passages="\n---\n".join(p["text"][:400] for p in passages)
-                         or "(none)")}])
+        reply = await asyncio.to_thread(llm.chat, draft_prompt,
+                                        on_token=on_token)
     except Exception as exc:  # noqa: BLE001 — no model is a refusal, not a 500
         timing["draft"] = int((time.time() - td) * 1000)
         timing["total"] = int((time.time() - t0) * 1000)
@@ -508,7 +583,16 @@ async def run(question: str, ticker: str = "NVDA", on_stage=None) -> dict:
                        question=question, ticker=ticker, facts=facts)
     draft = reply["content"]
     timing["draft"] = int((time.time() - td) * 1000)
-    emit("draft", "done", ms=timing["draft"])
+    # How long the page sat blank, kept next to how long the call took. The two
+    # are the before and after of streaming, and a speed claim that reports only
+    # the total would show no change at all where the change is entirely real.
+    st = reply.get(llm.STREAM_KEY)
+    if st and st.ttft_ms is not None:
+        timing["draft_ttft"] = st.ttft_ms
+        if st.ttfr_ms is not None:
+            timing["draft_ttfr"] = st.ttfr_ms
+    emit("draft", "done", ms=timing["draft"],
+         ttft=timing.get("draft_ttft"))
 
     tg = time.time()
     emit("guard", "start")

@@ -147,13 +147,92 @@ def model_enabled() -> bool:
 # makes it a no-op until someone sets it.
 PLAN_CHAT_MODEL = os.environ.get("FD_PLAN_CHAT_MODEL", "").strip() or CHAT_MODEL
 
-# Whether to end the planning loop as soon as a step has produced facts,
-# rather than making one more call to hear the model say it wants no more
-# tools. Saves a full round trip per question; costs any question whose plan
-# genuinely needs a second round of tool calls to be decided after seeing the
-# first round's results. Off until the eval suite says otherwise.
+# How many facts the DRAFT prompt may carry. 0 means all of them, and 0 is the
+# default because the measurement said so, twice over.
+#
+# The theory was that a plan returning sixty facts for a two-period question
+# pays for them twice — prefill on the way in, reasoning over noise once there.
+# Neither half survived. Prefill is not the cost: on this endpoint a streamed
+# call reaches its first chunk in about 0.5s whatever the prompt size. And
+# draft time tracks how hard the question is, not how many rows came back —
+# H3 drafts 60 facts in 8.3s, H6 drafts 8 in 29.7s.
+#
+# Measured on the eval suite at a cap of 12, changing nothing else:
+#
+#   off       15/15   median total 23.8s   draft 17.2s
+#   cap 12    14/15   median total 23.8s   draft 15.1s
+#
+# Two seconds off the draft, none off the request, and a case lost. H1 started
+# converting the trimmed figures to percentages and wrote two that trace to
+# nothing; the guard struck them, which is the system working, but the answer
+# was worse.
+#
+# The case that matters more still PASSED. H5 asks which quarter had the
+# highest gross margin. Untrimmed it answers 0.7835 and is right. Trimmed it
+# answers 0.7500 — grounded, cited, checkable, and wrong, because the quarter
+# that was actually highest had been cut out of the table before it was asked.
+# Every figure traced to a filing, so the grounding check had nothing to say.
+# That is the shape of failure this whole app is built to avoid, arriving
+# through a latency knob.
+#
+# The prompt does warn the model that the list is truncated and tells it not to
+# claim a maximum over one. It claimed one anyway. A note in a prompt is not a
+# constraint.
+#
+# Kept rather than deleted: it is the correct lever for an endpoint with a
+# small context window, where the trade it makes has to be made, and
+# agent.draft_table is careful about which rows it drops. It buys nothing here,
+# and evals/cases.py now has a check that fails if it is ever turned on by
+# accident.
+DRAFT_FACTS_MAX = int(os.environ.get("FD_DRAFT_FACTS_MAX", "0") or 0)
+
+# Whether to stream the draft call token by token. It does not change how long
+# the answer takes — the same tokens are generated either way — it changes when
+# the first one is visible.
+#
+# It buys less here than it does against most endpoints, and the reason is the
+# most useful thing measured in this exercise. gpt-oss reasons before it writes,
+# and on the eval suite the draft call spends nearly all of its wall clock doing
+# that: first chunk of ANY kind arrives at 0.5s, first chunk of ANSWER at 14.5s
+# of a 17.2s call. So streaming cuts the median blank screen by 15%, not by the
+# two thirds a non-reasoning model would give — and the tail is where it pays,
+# because the worst case in the suite emits its first word 32 seconds before it
+# finishes (E1: 86.6s draft, first word at 54.7s).
+#
+# That 0.5s is itself worth writing down: prefill is not the problem on this
+# endpoint, generation is. It is why FD_DRAFT_FACTS_MAX buys nothing and why
+# the serving-side lever worth asking for is a faster decode, not a warmer
+# cache. See evals/probe_llm.py.
+#
+# Off is still a supported posture: an endpoint that will not stream falls back
+# to a single call by itself (see llm._stream), so this flag is for turning the
+# progressive display off deliberately, not for compatibility.
+STREAM_DRAFT = os.environ.get(
+    "FD_STREAM_DRAFT", "1").strip().lower() not in ("0", "false", "no", "off")
+
+# Whether to end the planning loop as soon as a step has produced facts, rather
+# than making one more call to hear the model say it wants no more tools.
+#
+# The eval suite has now said. Measured over 15 cases against gpt-oss-120b,
+# changing nothing else:
+#
+#   off   15/15   median 29.4s   worst 108.3s   planning 14.5s median
+#   on    15/15   median 20.0s   worst  60.4s   planning  4.9s median
+#
+# A third of the median request and nearly half the worst case, for no case
+# lost. That is the round trip whose entire content was the model declining to
+# call anything else — reasoning tokens spent to say "nothing further", once
+# per question, in front of a user waiting on it.
+#
+# What it costs is real and this suite does not price it: a question whose plan
+# genuinely needs a second round of tool calls, decided after seeing the first
+# round's results, now gets one round. Nothing here asks for that — every case
+# is answerable from one tool call — so treat the default as measured on
+# single-hop questions and revisit it if a multi-hop one is ever added. The
+# failure mode is a thin answer, not a wrong one: the guard still checks every
+# figure, and facts that were never retrieved cannot be cited.
 STOP_ON_FIRST_FACTS = os.environ.get(
-    "FD_STOP_ON_FIRST_FACTS", "").strip().lower() in ("1", "true", "yes", "on")
+    "FD_STOP_ON_FIRST_FACTS", "1").strip().lower() in ("1", "true", "yes", "on")
 
 
 # Where this instance is mounted. Empty by default: the app owns "/" and every

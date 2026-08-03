@@ -5,5 +5,9 @@
   <section class="progress" sse-swap="stage" aria-live="polite">
     {{ rail }}
   </section>
-  <div class="report-slot" sse-swap="done"></div>
+  {# Two events, one slot. `draft` paints the answer as it is generated and
+     `done` replaces it with the guarded version — swapping them into the same
+     element is what makes the second look like the first settling rather than
+     a second answer appearing underneath. #}
+  <div class="report-slot" sse-swap="draft,done"></div>
 </div>

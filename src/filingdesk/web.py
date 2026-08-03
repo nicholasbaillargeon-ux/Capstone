@@ -82,7 +82,7 @@ HEARTBEAT = 2.0
 STAGES = [
     ("tools", "Retrieving facts", "MCP tool calls against the filings cache"),
     ("retrieve", "Reading notes", "vector search over the vault"),
-    ("draft", "Drafting", "one generation pass on CPU"),
+    ("draft", "Drafting", "one generation pass, streamed as it is written"),
     ("guard", "Checking every figure", "each numeral traced back to a fact"),
 ]
 
@@ -201,6 +201,12 @@ def new_state() -> dict[str, dict]:
 def apply_stage(state: dict[str, dict], ev: dict) -> None:
     stage, status = ev.get("stage", ""), ev.get("status", "")
 
+    # Tokens are not a state change; they are the draft arriving. The rail says
+    # "drafting" either way, and re-rendering it per token would push a few
+    # hundred frames of identical markup down the wire.
+    if status == "token":
+        return
+
     # A repair is a second pass through the guard, not a stage of its own.
     if stage == "repair":
         guard = state["guard"]
@@ -225,6 +231,8 @@ def apply_stage(state: dict[str, dict], ev: dict) -> None:
             bits.append(f"{ev['facts']} facts")
         if isinstance(ev.get("k"), int):
             bits.append(f"{ev['k']} passages")
+        if isinstance(ev.get("ttft"), int):
+            bits.append(f"first word at {ev['ttft'] / 1000:.1f}s")
         if stage == "guard":
             unsupported = ev.get("unsupported", 0)
             bits.append("all figures traced" if not unsupported
@@ -253,14 +261,64 @@ def sse(event: str, payload: str) -> str:
     return f"event: {event}\n{body}\n"
 
 
+# How often the partial draft is pushed, at most. One frame per token would be
+# a few hundred frames carrying the same growing paragraph; at six a second the
+# text still appears to type itself.
+DRAFT_FLUSH = 0.16
+
+
+def render_draft_live(text: str) -> str:
+    """The draft as it arrives — visibly provisional, and correctly so.
+
+    It has not been through the guard yet. Every figure in it is a figure no
+    one has checked, which is precisely what this project promises not to show
+    without saying so. It is therefore labelled as unchecked, its citation
+    markers are left as written rather than rendered as traceable chips, and
+    the finished report replaces it in the same slot the moment the guard is
+    done. What a reader sees unverified, they see marked unverified.
+    """
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    # Not escaped here: the template autoescapes, and doing both turns a `<`
+    # in the model's prose into a visible `&lt;`.
+    return render("_draft_live.html", paras=paras)
+
+
 async def stream(question: str, ticker: str):
     """Run one request, re-rendering the rail as each stage lands."""
     queue: asyncio.Queue = asyncio.Queue()
     state = new_state()
     t0 = time.monotonic()
+    draft_buf: list[str] = []
+    last_flush = 0.0
+
+    loop = asyncio.get_running_loop()
 
     def on_stage(stage: str, status: str, **extra) -> None:
-        queue.put_nowait({"stage": stage, "status": status, **extra})
+        """Called from two threads, and it has to be right in both.
+
+        Stage events come from the agent coroutine, which runs on this loop.
+        Draft tokens come from the worker thread llm.chat was handed to, and
+        asyncio.Queue is not thread-safe: put_nowait appends the item and then
+        wakes the waiting getter through a Future, which off-loop is the call
+        documented not to be safe. It mostly appears to work, which is the bad
+        kind of wrong — the failure is a dropped wakeup, and what a reader sees
+        is a stream that stops mid-answer.
+
+        Hopping every event onto the loop instead is not the fix either: an
+        event scheduled with call_soon_threadsafe lands after work already
+        queued behind it, so the finished report can overtake the stage frames
+        that were emitted before it and the rail never fills in.
+
+        So: direct when we are already on the loop, scheduled when we are not.
+        The absence of a running loop IS the "another thread" test.
+        """
+        item = {"stage": stage, "status": status, **extra}
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            loop.call_soon_threadsafe(queue.put_nowait, item)
+        else:
+            queue.put_nowait(item)
 
     async def runner() -> None:
         try:
@@ -278,6 +336,14 @@ async def stream(question: str, ticker: str):
                 item = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT)
             except TimeoutError:
                 yield sse("stage", render_rail(state, time.monotonic() - t0))
+                continue
+
+            if item.get("status") == "token":
+                draft_buf.append(item.get("text", ""))
+                now = time.monotonic()
+                if now - last_flush >= DRAFT_FLUSH:
+                    last_flush = now
+                    yield sse("draft", render_draft_live("".join(draft_buf)))
                 continue
 
             if "_done" in item:

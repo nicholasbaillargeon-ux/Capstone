@@ -97,7 +97,8 @@ def _last_user(messages):
 
 
 def fake_chat(messages: list[dict], tools: list[dict] | None = None,
-              effort: str | None = None, model: str | None = None) -> dict:
+              effort: str | None = None, model: str | None = None,
+              on_token=None) -> dict:
     """Behaviour depends on the question, so the 5 smoke questions exercise
     5 different paths rather than replaying one canned answer.
 
@@ -106,7 +107,12 @@ def fake_chat(messages: list[dict], tools: list[dict] | None = None,
     stand-in that cannot be called the way the real thing is called is not a
     stand-in — when the planning loop grew `effort=`, this raised TypeError
     from inside the MCP session, and the request reported it as "the filings
-    database could not be reached"."""
+    database could not be reached".
+
+    `on_token` is not ignored. Synthetic mode is where the SSE path is
+    exercised without a model, so a fake that returned the whole draft at once
+    would leave the streaming display untested exactly where it is cheapest to
+    test — the answer is handed over a word at a time instead."""
     if tools:
         # Already have tool output? Stop calling tools.
         if any(m.get("role") == "tool" for m in messages):
@@ -137,8 +143,17 @@ def fake_chat(messages: list[dict], tools: list[dict] | None = None,
         _last_facts[:] = facts          # repair prompt carries no FACTS block
     else:
         facts = list(_last_facts)
+    def reply(text: str) -> dict:
+        if on_token:
+            # Word at a time, whitespace kept, so the receiving end sees the
+            # same shape a real stream has: many pieces that concatenate to
+            # exactly the content of the returned message.
+            for piece in re.findall(r"\S+\s*", text):
+                on_token(piece)
+        return {"role": "assistant", "content": text}
+
     if not facts:
-        return {"role": "assistant", "content": "No facts were provided."}
+        return reply("No facts were provided.")
 
     def fmt(raw):
         v = float(raw.replace(",", ""))
@@ -152,7 +167,7 @@ def fake_chat(messages: list[dict], tools: list[dict] | None = None,
     if "PROBLEMS" not in prompt:
         # Deliberate fabrication so the guard has something to catch.
         body += " It peaked at 81.2% [[fact:1]] mid-period."
-    return {"role": "assistant", "content": body}
+    return reply(body)
 
 
 NOTES = {

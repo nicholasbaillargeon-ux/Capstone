@@ -19,6 +19,8 @@ model, wherever it runs, can introduce a number that is not in a filing.
 from __future__ import annotations
 
 import json
+import time
+from typing import NamedTuple
 
 import requests
 
@@ -53,7 +55,8 @@ def _headers() -> dict:
 
 
 def _chat(messages: list[dict], tools: list[dict] | None,
-          effort: str | None = None, model: str | None = None) -> dict:
+          effort: str | None = None, model: str | None = None,
+          on_token=None) -> dict:
     # The agent speaks the flatter shape: a tool result carries a bare `name`.
     # The OpenAI schema wants a tool_call_id on every tool message and rejects
     # the request without one. The agent's retry loop also emits tool messages
@@ -99,6 +102,8 @@ def _chat(messages: list[dict], tools: list[dict] | None,
         body["reasoning_effort"] = effort
 
     url = f"{config.LLM_BASE_URL.rstrip('/')}/chat/completions"
+    if on_token is not None:
+        return _stream(url, body, on_token)
     r = requests.post(url, json=body, headers=_headers(), timeout=600)
     if r.status_code == 400 and _send_effort:
         # Not every OpenAI-compatible server tolerates an unknown body field,
@@ -132,6 +137,121 @@ def _chat(messages: list[dict], tools: list[dict] | None,
     return out
 
 
+# ---- streaming -----------------------------------------------------------
+# Only the draft is streamed, and only because it is the stage a person is
+# waiting on: it runs last, it is the longest single call in the pipeline, and
+# until it returns the page has nothing to show. Streaming does not make the
+# answer arrive sooner — it makes the wait legible, which is a different and
+# more honest claim.
+#
+# The planning loop is deliberately NOT streamed. Its output is tool calls,
+# which are assembled from deltas across chunks and are of no interest to a
+# reader half-built; the complexity would buy nothing a spinner does not.
+#
+# A reasoning model spends most of a draft call thinking before it emits a
+# single visible character. Both moments are timed — the first chunk of any
+# kind (`ttfr`, the endpoint is alive and reasoning) and the first chunk of
+# answer text (`ttft`, there is something to read) — because reporting only
+# the second would credit streaming with less than it does, and reporting only
+# the first would credit it with more.
+
+class Stream(NamedTuple):
+    """What one streamed call measured.
+
+    Handed back on the message rather than parked in a module global, because
+    the server answers more than one question at a time: a global would let two
+    concurrent requests read each other's timings, and the wrong number here is
+    worse than none — it is a latency claim about a request that never made it.
+    """
+
+    ttfr_ms: int | None
+    ttft_ms: int | None
+    chunks: int
+
+
+# The key the timings ride on. Underscored because it is not part of the
+# message shape the agent and toolcall.validate are written against; anything
+# reading a message for its content or its tool calls should never see it.
+STREAM_KEY = "_stream"
+
+
+def _stream(url: str, body: dict, on_token) -> dict:
+    """POST with `stream: true`, feeding text to `on_token` as it lands.
+
+    Falls back to a single non-streamed call if the endpoint refuses to
+    stream: a proxy that cannot is a reason to lose the progressive display,
+    never a reason to lose the answer.
+    """
+    body = dict(body, stream=True)
+    t0 = time.monotonic()
+    try:
+        r = requests.post(url, json=body, headers=_headers(),
+                          timeout=600, stream=True)
+    except requests.RequestException as exc:
+        raise LLMError(f"stream to {config.LLM_BASE_URL} failed: {exc}") from exc
+
+    if r.status_code == 400 and _send_effort and "reasoning_effort" in body:
+        # Same latch the unstreamed path has, and it has to be here too: a
+        # strict server rejects the unknown field whichever way the request was
+        # made, and without this the retry below would send it again, 400
+        # again, and report "cannot stream" for a request that streams fine.
+        _disable_effort(r.text[:200])
+        r.close()
+        body.pop("reasoning_effort", None)
+        r = requests.post(url, json=body, headers=_headers(),
+                          timeout=600, stream=True)
+
+    if r.status_code >= 400:
+        detail = r.text[:200]
+        r.close()
+        # An endpoint that rejects `stream` rejects it every time; the caller
+        # still wants an answer, so take the unstreamed one and say why once.
+        print(f"[llm] endpoint refused a streamed request ({r.status_code}: "
+              f"{detail}); falling back to a single call")
+        body.pop("stream", None)
+        r2 = requests.post(url, json={**body, "stream": False},
+                           headers=_headers(), timeout=600)
+        if r2.status_code >= 400:
+            raise LLMError(f"{r2.status_code} from {config.LLM_BASE_URL}: "
+                           f"{r2.text[:300]}")
+        msg = ((r2.json().get("choices") or [{}])[0].get("message") or {})
+        text = msg.get("content") or ""
+        if text:
+            on_token(text)
+        return {"role": "assistant", "content": text,
+                STREAM_KEY: Stream(None, None, 0)}
+
+    parts: list[str] = []
+    ttfr = ttft = None
+    chunks = 0
+    for raw in r.iter_lines(decode_unicode=True):
+        if not raw or not raw.startswith("data:"):
+            continue
+        payload = raw[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            data = json.loads(payload)
+        except ValueError:
+            continue
+        chunks += 1
+        if ttfr is None:
+            ttfr = int((time.monotonic() - t0) * 1000)
+        delta = ((data.get("choices") or [{}])[0].get("delta") or {})
+        piece = delta.get("content")
+        if not piece:
+            continue
+        if ttft is None:
+            ttft = int((time.monotonic() - t0) * 1000)
+        parts.append(piece)
+        on_token(piece)
+
+    if not parts:
+        raise LLMError("stream produced no content")
+    return {"role": "assistant", "content": "".join(parts),
+            STREAM_KEY: Stream(ttfr, ttft, chunks)}
+
+
 def _embed(texts: list[str]) -> list[list[float]]:
     r = requests.post(f"{config.LLM_BASE_URL.rstrip('/')}/embeddings",
                       json={"model": config.EMBED_MODEL, "input": texts},
@@ -162,14 +282,22 @@ def _guard_config() -> None:
 
 
 def chat(messages: list[dict], tools: list[dict] | None = None,
-         effort: str | None = None, model: str | None = None) -> dict:
+         effort: str | None = None, model: str | None = None,
+         on_token=None) -> dict:
     """`effort` and `model` override the budget and the model for one call.
 
     Planning and drafting are both chat calls but want different settings —
     see config.REASONING_EFFORT and config.PLAN_CHAT_MODEL.
+
+    Passing `on_token` streams the reply, calling it with each piece of text as
+    it arrives. Not for tool-calling requests: tool calls arrive as deltas that
+    have to be reassembled before they mean anything, and a half-built one is
+    of no use to anybody watching.
     """
     _guard_config()
-    return _chat(messages, tools, effort, model)
+    if on_token is not None and tools:
+        raise LLMError("streaming is not supported for tool-calling requests")
+    return _chat(messages, tools, effort, model, on_token)
 
 
 def embed(texts: list[str]) -> list[list[float]]:

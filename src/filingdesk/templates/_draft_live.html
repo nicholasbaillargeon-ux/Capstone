@@ -1,0 +1,26 @@
+{# The draft as it is being written. Replaced wholesale by _report.html the
+   moment the guard has run — same slot, same panel shell, so the finished
+   report lands where the provisional one was rather than below it.
+
+   The banner is not decoration. This text has not been through the guard, so
+   every figure in it is one nobody has checked, and showing an unchecked
+   figure that looks checked is the single thing this project promises not to
+   do. Citation markers are left as the model wrote them rather than rendered
+   as traceable chips: a chip is a link to a verified fact, and none of these
+   are verified yet. #}
+<section class="panel" aria-label="Draft in progress" aria-busy="true">
+  <div class="panel-head">
+    <p class="label">Drafting</p>
+    <span class="chip chip-warn">
+      <span class="spinner" aria-hidden="true"></span>
+      unchecked — no figure traced yet
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="report-prose is-draft" aria-live="polite">
+      {% for p in paras %}
+      <p>{{ p }}</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>

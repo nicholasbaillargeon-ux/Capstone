@@ -417,6 +417,39 @@ code {
   background: var(--accent); color: var(--card); outline: none;
 }
 
+/* The draft while it is still being written. Set in the same serif at the same
+   measure as the finished report — it IS the finished report, a second early —
+   but held back a step in colour so that "not checked yet" is visible without
+   reading the banner. The cursor marks the live edge. */
+.report-prose.is-draft { color: var(--ink-2); }
+
+.report-prose.is-draft p:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  animation: caret 1s step-end infinite;
+}
+
+@keyframes caret { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .report-prose.is-draft p:last-child::after { animation: none; }
+}
+
+/* The chip carries a spinner while the draft streams; without this the ring
+   sits on the text baseline and pushes the chip's line-height around. */
+.chip .spinner {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+  vertical-align: -0.5px;
+  margin-right: 5px;
+}
+
 .struck {
   text-decoration-color: var(--stop);
   text-decoration-thickness: 2px;

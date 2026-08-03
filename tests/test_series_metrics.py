@@ -7,7 +7,7 @@ fixtures shaped like the happy path.
 import duckdb
 import pytest
 
-from filingdesk import agent, companies, config, metrics, series
+from filingdesk import agent, companies, config, llm, metrics, series
 
 CIK = 999999
 
@@ -301,6 +301,14 @@ def test_stub_marks_the_environment_for_child_processes(tmp_path, monkeypatch):
     monkeypatch.setattr(stub, "vault", _NullVault())
     dbmod.close_all()
 
+    # install() rebinds llm.chat and llm.embed to the fakes and never puts
+    # them back. Registering them with monkeypatch first — at their current
+    # values — is what makes that undone at teardown; without it this test
+    # leaves every later test in the session talking to the stub, and the
+    # first ones to notice were the streaming tests, which then measured the
+    # fake and passed for the wrong reason.
+    monkeypatch.setattr(llm, "chat", llm.chat)
+    monkeypatch.setattr(llm, "embed", llm.embed)
     stub.install()
     assert os.environ.get("FD_STUB") == "1"
     dbmod.close_all()

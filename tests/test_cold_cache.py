@@ -19,7 +19,7 @@ import asyncio
 
 import pytest
 
-from filingdesk import agent
+from filingdesk import agent, config
 
 
 @pytest.fixture
@@ -193,24 +193,43 @@ def test_the_nudge_does_not_repeat(monkeypatch, ensured):
     assert facts == []
 
 
+class _Loaded(_Session):
+    """A session whose one tool returns a fact."""
+
+    async def call_tool(self, name, args):
+        self.called.append((name, args.get("ticker")))
+
+        class R:
+            structured_content = {
+                "ticker": "NVDA", "concept": "NetIncome",
+                "facts": [{"concept": "NetIncome", "value": 1.0,
+                           "end": "2025-01-26", "accn": "0001-25-1"}]}
+        return R()
+
+
 def test_a_finished_plan_is_not_nudged(monkeypatch, ensured):
     """No tool calls WITH facts in hand is the normal exit. Nudging there
     would buy a round trip of latency on every well-behaved request."""
+    monkeypatch.setattr(config, "STOP_ON_FIRST_FACTS", False)
     seen = _replies(monkeypatch, ONE_CALL, NO_CALLS)
 
-    class Loaded(_Session):
-        async def call_tool(self, name, args):
-            self.called.append((name, args.get("ticker")))
-
-            class R:
-                structured_content = {
-                    "ticker": "NVDA", "concept": "NetIncome",
-                    "facts": [{"concept": "NetIncome", "value": 1.0,
-                               "end": "2025-01-26", "accn": "0001-25-1"}]}
-            return R()
-
-    facts, _ = asyncio.run(agent.gather_facts(Loaded(), "q", "NVDA"))
+    facts, _ = asyncio.run(agent.gather_facts(_Loaded(), "q", "NVDA"))
     assert len(seen) == 2
     assert len(facts) == 1
     assert all(agent.prompts.NO_TOOLS_YET not in m.get("content", "")
                for msgs in seen for m in msgs)
+
+
+def test_stopping_on_first_facts_skips_the_call_that_says_nothing_further(
+        monkeypatch, ensured):
+    """The round trip the test above counts is one whose entire content is the
+    model declining to call anything else. On the eval suite it was a third of
+    the median request, so it is not made by default — and this is the test
+    that says so, because "one fewer model call" is the whole feature and it is
+    invisible in the answer."""
+    monkeypatch.setattr(config, "STOP_ON_FIRST_FACTS", True)
+    seen = _replies(monkeypatch, ONE_CALL, NO_CALLS)
+
+    facts, _ = asyncio.run(agent.gather_facts(_Loaded(), "q", "NVDA"))
+    assert len(seen) == 1, "asked the model again after it had the facts"
+    assert len(facts) == 1
