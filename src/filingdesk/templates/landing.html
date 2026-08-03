@@ -7,7 +7,7 @@
 <meta name="description" content="Answers about public companies drawn from
       SEC XBRL filings. Every figure is retrieved from a specific filing and
       every ratio computed in Python — none are generated.">
-<link rel="stylesheet" href="/static/landing.css">
+<link rel="stylesheet" href="{{ base }}/static/landing.css">
 </head>
 <body>
 
@@ -63,7 +63,7 @@
     </p>
     <div class="actions">
       {% if model_enabled %}
-      <a class="btn btn-lg" href="/ask">Ask a question →</a>
+      <a class="btn btn-lg" href="{{ base }}/ask">Ask a question →</a>
       <a class="btn-ghost" href="{{ app_url }}?ticker={{ featured[0] }}">Open the dashboard</a>
       {% else %}
       {# No model configured: the charts are the whole product, so the primary
@@ -89,7 +89,7 @@
       <span class="path">filing-desk — {{ featured[0] }} · quarterly · 12 periods</span>
     </div>
     <div class="shot-frame">
-      <img src="/static/landing-hero.png" width="3136" height="3089"
+      <img src="{{ base }}/static/landing-hero.png" width="3136" height="3089"
            alt="The Filing Desk dashboard showing NVIDIA quarterly fundamentals:
                 revenue, margin, income and free cash flow cards over a margin
                 profile chart.">

@@ -228,7 +228,8 @@ def landing() -> HTMLResponse:
         stack += [config.CHAT_MODEL, "LiteLLM" if config.LLM_PROVIDER
                   == "openai" else "Ollama"]
     return HTMLResponse(web.render(
-        "landing.html", stub=STUB, app_url="/", featured=config.FEATURED,
+        "landing.html", stub=STUB, base=config.BASE_PATH,
+        app_url=f"{config.BASE_PATH}/", featured=config.FEATURED,
         ready=h["ready"], facts=facts, universe=universe,
         model_enabled=h["model_enabled"], stats=stats, stack=stack))
 
@@ -239,7 +240,7 @@ def index(ticker: str = "NVDA") -> HTMLResponse:
     /api/company/{ticker} — the charts are interactive, so the data has to
     reach the browser regardless."""
     return HTMLResponse(web.render(
-        "dashboard.html", stub=STUB, ticker=ticker.upper(),
+        "dashboard.html", stub=STUB, base=config.BASE_PATH, ticker=ticker.upper(),
         model_enabled=config.model_enabled() or STUB,
         featured=config.FEATURED, universe=companies.count()))
 
@@ -249,6 +250,7 @@ def _page(question: str = "", ticker: str = "NVDA",
     return web.render(
         "index.html",
         stub=STUB,
+        base=config.BASE_PATH,
         model_enabled=config.model_enabled() or STUB,
         examples=EXAMPLES,
         question=question,
@@ -282,7 +284,8 @@ async def report_form(question: str = Form(...), ticker: str = Form("NVDA")):
 def ui_run(question: str, ticker: str = "NVDA") -> HTMLResponse:
     """Hand htmx the SSE shell. The stream itself does the work."""
     q, t = question.strip(), ticker.strip().upper()
-    url = "/api/report/stream?" + urlencode({"question": q, "ticker": t})
+    url = (f"{config.BASE_PATH}/api/report/stream?"
+           + urlencode({"question": q, "ticker": t}))
     return HTMLResponse(web.render(
         "_run.html",
         stream_url=url,

@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Filing Desk — what companies actually reported</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="{{ base }}/static/app.css">
 {# Not deferred: the saved theme must be stamped on <html> before first
    paint, or dark-mode users get a light flash on every load. #}
-<script src="/static/theme.js"></script>
-<script src="/static/charts.js" defer></script>
-<script src="/static/dashboard.js" defer></script>
+<script src="{{ base }}/static/theme.js"></script>
+<script src="{{ base }}/static/charts.js" defer></script>
+<script src="{{ base }}/static/dashboard.js" defer></script>
 </head>
-<body data-ticker="{{ ticker }}">
+<body data-ticker="{{ ticker }}" data-base="{{ base }}">
 <div class="page">
 
   {% if stub %}
@@ -36,7 +36,7 @@
     <div class="masthead-text">
       {# The wordmark is the way back out to the front door, which is where
          the project explains itself. #}
-      <h1 class="wordmark"><a href="/landing">Filing Desk</a></h1>
+      <h1 class="wordmark"><a href="{{ base }}/landing">Filing Desk</a></h1>
       <p class="tagline">
         What public companies actually reported. Every figure is retrieved from a
         specific filing — none are generated.
@@ -44,7 +44,7 @@
     </div>
     <div class="masthead-side">
       <div class="health" id="health"><span class="chip">checking…</span></div>
-      <a class="cta" href="/ask">
+      <a class="cta" href="{{ base }}/ask">
         <span class="cta-title">Ask a question</span>
         <span class="cta-sub">Plain English, every figure cited</span>
         <span class="cta-arrow" aria-hidden="true">→</span>
@@ -109,7 +109,7 @@
       <p>The charts are drawn in the browser, so this dashboard needs it. The
         data is still reachable without it — see
         <code>/api/company/NVDA</code>, and
-        <a href="/ask">the question page</a> works without JavaScript.</p>
+        <a href="{{ base }}/ask">the question page</a> works without JavaScript.</p>
     </div>
   </noscript>
 

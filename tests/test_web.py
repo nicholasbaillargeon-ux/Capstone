@@ -78,7 +78,7 @@ def test_fact_rows_expose_flags_and_computed():
 
 
 def _landing(**over) -> str:
-    ctx = {"stub": False, "app_url": "/", "featured": ["NVDA", "AAPL"],
+    ctx = {"stub": False, "base": "", "app_url": "/", "featured": ["NVDA", "AAPL"],
            "ready": True, "facts": 423357, "universe": 10432,
            "model_enabled": True, "stack": ["Python"],
            "stats": [{"label": "XBRL FACTS", "value": "423,357",
@@ -113,6 +113,77 @@ def test_landing_leads_with_the_dashboard_when_there_is_no_model():
     html = _landing(model_enabled=False)
     assert 'class="btn btn-lg" href="/?ticker=NVDA"' in html
     assert 'href="/ask"' not in html
+
+
+# ---- base path -----------------------------------------------------------
+# The app is mounted under a prefix in the combined showcase. The proxy strips
+# it before the request lands, so routing is unaffected — what breaks without
+# these is every URL the pages *emit*.
+
+def _reload_config(monkeypatch, value):
+    import importlib
+
+    from filingdesk import config
+    monkeypatch.setenv("FD_BASE_PATH", value)
+    importlib.reload(config)
+    return config
+
+
+@pytest.fixture
+def restore_config():
+    import importlib
+
+    from filingdesk import config
+    yield
+    importlib.reload(config)
+
+
+@pytest.mark.parametrize("given,expected", [
+    ("", ""), ("/", ""), ("filing-desk", "/filing-desk"),
+    ("/filing-desk", "/filing-desk"), ("/filing-desk/", "/filing-desk"),
+    ("  /filing-desk/  ", "/filing-desk"),
+])
+def test_base_path_normalises_to_one_leading_slash(monkeypatch, restore_config,
+                                                   given, expected):
+    """Templates concatenate: {{ base }}/static/app.css. A trailing slash or a
+    missing leading one produces a URL that 404s in a way nothing else does."""
+    assert _reload_config(monkeypatch, given).BASE_PATH == expected
+
+
+def test_dashboard_urls_carry_the_prefix():
+    html = web.render("dashboard.html", base="/filing-desk", stub=False,
+                      ticker="NVDA", model_enabled=True,
+                      featured=["NVDA"], universe=10432)
+    assert 'href="/filing-desk/static/app.css"' in html
+    assert 'src="/filing-desk/static/dashboard.js"' in html
+    assert 'href="/filing-desk/ask"' in html
+    assert 'href="/filing-desk/landing"' in html
+    # dashboard.js reads this and prefixes every fetch with it.
+    assert 'data-base="/filing-desk"' in html
+
+
+def test_ask_page_urls_carry_the_prefix():
+    html = web.render("index.html", base="/filing-desk", stub=False,
+                      model_enabled=True, examples=[], question="",
+                      ticker="NVDA", result=None, report_fragment="")
+    assert 'hx-get="/filing-desk/ui/run"' in html
+    assert 'hx-get="/filing-desk/api/history/html"' in html
+    assert 'action="/filing-desk/report"' in html
+
+
+def test_landing_urls_carry_the_prefix():
+    html = _landing(base="/filing-desk", app_url="/filing-desk/")
+    assert 'href="/filing-desk/static/landing.css"' in html
+    assert 'href="/filing-desk/?ticker=NVDA"' in html
+    assert 'href="/filing-desk/ask"' in html
+
+
+def test_unmounted_urls_stay_at_the_root():
+    """The default is no prefix, and it must not leave a stray slash behind."""
+    html = web.render("dashboard.html", base="", stub=False, ticker="NVDA",
+                      model_enabled=True, featured=["NVDA"], universe=1)
+    assert 'href="/static/app.css"' in html
+    assert "//static" not in html
 
 
 def _collect(gen):

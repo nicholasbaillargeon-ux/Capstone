@@ -8,6 +8,12 @@
   "use strict";
 
   const C = window.FDCharts;
+
+  /* Where this instance is mounted, stamped on <body> by the template from
+   * FD_BASE_PATH. Empty when the app owns the root; "/filing-desk" when a
+   * proxy serves it under a prefix, which every URL built below has to carry
+   * or it resolves against whatever else lives at that root. */
+  const BASE = document.body.dataset.base || "";
   const state = {
     ticker: document.body.dataset.ticker || "NVDA",
     period: "quarterly",
@@ -43,8 +49,8 @@
     body.appendChild(p);
     const n = document.createElement("p");
     n.className = "note";
-    n.textContent = "The API still works — try /api/health or "
-      + "/api/company/NVDA directly to confirm the server is fine.";
+    n.textContent = "The API still works — try " + BASE + "/api/health or "
+      + BASE + "/api/company/NVDA directly to confirm the server is fine.";
     body.appendChild(n);
     box.appendChild(body);
     host.appendChild(box);
@@ -59,7 +65,7 @@
 
   /* ---- health ------------------------------------------------------ */
   function health() {
-    fetch("/api/health/html")
+    fetch(BASE + "/api/health/html")
       .then(r => r.text())
       .then(html => { $("#health").innerHTML = html; })   // our own markup
       .catch(() => {});
@@ -112,7 +118,7 @@
     const q = input.value.trim();
     if (!q) { hits = []; renderResults(); return; }
     searchTimer = setTimeout(function () {
-      fetch("/api/companies/search?q=" + encodeURIComponent(q) + "&limit=10")
+      fetch(BASE + "/api/companies/search?q=" + encodeURIComponent(q) + "&limit=10")
         .then(r => r.json())
         .then(function (j) { hits = j.results || []; active = -1; renderResults(); })
         .catch(() => {});
@@ -153,7 +159,7 @@
     const btn = $("#refresh");
     btn.disabled = true;
     btn.textContent = "↻ Syncing…";
-    fetch("/api/company/" + encodeURIComponent(state.ticker) + "/refresh",
+    fetch(BASE + "/api/company/" + encodeURIComponent(state.ticker) + "/refresh",
       { method: "POST" })
       .then(r => r.json())
       .then(function () { load(); })
@@ -169,7 +175,7 @@
   function load() {
     state.busy = true;
     host.classList.add("is-loading");    // hold the frame, no skeleton flash
-    const url = "/api/company/" + encodeURIComponent(state.ticker)
+    const url = BASE + "/api/company/" + encodeURIComponent(state.ticker)
       + "?period=" + state.period + "&limit=" + state.limit
       + "&concept=" + encodeURIComponent(state.concept);
     fetch(url)

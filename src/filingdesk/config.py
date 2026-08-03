@@ -147,6 +147,22 @@ def model_configured() -> bool:
     """Enabled AND actually told which model to call."""
     return model_enabled() and bool(CHAT_MODEL)
 
+# Where this instance is mounted. Empty by default: the app owns "/" and every
+# URL it writes is absolute from there.
+#
+# Behind a proxy that serves it under a prefix — the combined showcase puts it
+# at /filing-desk/ alongside two other apps — the prefix is stripped before the
+# request arrives, so routing needs no change. What breaks without this is
+# every URL the app *emits*: /static/app.css, /ask, /api/company/…, the SSE
+# stream. Each would resolve against the proxy's root and hit whatever else
+# lives there.
+#
+# Normalised to "" or "/prefix" — one leading slash, no trailing one — so a
+# template can write {{ base }}/static/app.css and be right either way.
+BASE_PATH = "/" + os.environ.get("FD_BASE_PATH", "").strip().strip("/")
+if BASE_PATH == "/":
+    BASE_PATH = ""
+
 # SEC requires a descriptive User-Agent with a real contact email.
 # No default. Failing loudly here is correct.
 SEC_UA = os.environ.get("SEC_USER_AGENT")

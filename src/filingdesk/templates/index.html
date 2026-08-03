@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Filing Desk</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="{{ base }}/static/app.css">
 {# Not deferred — the saved theme is stamped before first paint. #}
-<script src="/static/theme.js"></script>
-<script src="/static/htmx.min.js"></script>
-<script src="/static/htmx-ext-sse.js"></script>
+<script src="{{ base }}/static/theme.js"></script>
+<script src="{{ base }}/static/htmx.min.js"></script>
+<script src="{{ base }}/static/htmx-ext-sse.js"></script>
 </head>
 <body>
 <div class="page">
@@ -34,7 +34,7 @@
   </div>
 
   <p class="backlink">
-    <a class="ghost" href="/">← Back to Filing Desk</a>
+    <a class="ghost" href="{{ base }}/">← Back to Filing Desk</a>
   </p>
 
   <header class="masthead">
@@ -46,10 +46,10 @@
       </p>
     </div>
     <div class="masthead-side">
-      <div class="health" hx-get="/api/health/html" hx-trigger="load, every 30s">
+      <div class="health" hx-get="{{ base }}/api/health/html" hx-trigger="load, every 30s">
         <span class="chip">checking…</span>
       </div>
-      <a class="cta" href="/">
+      <a class="cta" href="{{ base }}/">
         <span class="cta-title">Charts &amp; figures</span>
         <span class="cta-sub">Every filed number, no model involved</span>
         <span class="cta-arrow" aria-hidden="true">→</span>
@@ -64,7 +64,7 @@
       Ask anything and the pipeline runs as far as it can, then declines rather
       than inventing prose: the scope gate, ticker resolution and the refusal
       machinery all work without a model. Only the final written summary needs
-      one. <b><a href="/">The dashboard</a></b> charts every one of these figures
+      one. <b><a href="{{ base }}/">The dashboard</a></b> charts every one of these figures
       with no model involved at any point.
     </p>
     <p>
@@ -77,8 +77,8 @@
 
   {# action/method are the fallback: without htmx this posts and renders a full
      page, just with no stages along the way. #}
-  <form class="ask" action="/report" method="post"
-        hx-get="/ui/run" hx-target="#run" hx-swap="innerHTML">
+  <form class="ask" action="{{ base }}/report" method="post"
+        hx-get="{{ base }}/ui/run" hx-target="#run" hx-swap="innerHTML">
     <div class="ask-row">
       <label class="field field-ticker">
         <span class="label">Ticker</span>
@@ -98,7 +98,7 @@
       <span class="label">Try</span>
       {% for ex in examples %}
       <button type="button" class="example"
-              hx-get="/ui/run" hx-target="#run" hx-swap="innerHTML"
+              hx-get="{{ base }}/ui/run" hx-target="#run" hx-swap="innerHTML"
               hx-vals='{{ ex.vals }}'>{{ ex.ticker }} · {{ ex.question }}</button>
       {% endfor %}
     </div>
@@ -119,10 +119,10 @@
   <section class="panel history">
     <div class="panel-head">
       <p class="label">Recent</p>
-      <button class="ghost" hx-get="/api/history/html" hx-target="#history"
+      <button class="ghost" hx-get="{{ base }}/api/history/html" hx-target="#history"
               hx-swap="innerHTML">Refresh</button>
     </div>
-    <div id="history" hx-get="/api/history/html" hx-trigger="load"
+    <div id="history" hx-get="{{ base }}/api/history/html" hx-trigger="load"
          hx-swap="innerHTML">
       <p class="empty">loading…</p>
     </div>
