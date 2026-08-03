@@ -163,6 +163,36 @@ body {
 
 .empty { font-size: 13px; color: var(--ink-3); margin: 0; padding: 6px 0; }
 
+/* ---- loading ---------------------------------------------------------- */
+/* A placeholder that is waiting on a fetch reads exactly like one that came
+   back with nothing, so the two that wait — the history list and the
+   dashboard's company panel — get a spinner beside the word. The ring is the
+   accent drawn over the hairline rule, so it carries the same weight as the
+   rest of the chrome and inherits both themes without a second declaration. */
+.loading { display: flex; align-items: center; gap: 9px; }
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Reduced motion still needs to say "working", so trade the rotation for the
+   same fade the progress rail's active dot uses. Its @keyframes are declared
+   inside a no-preference query and so do not exist here; this is that shape
+   with its own name. */
+@keyframes spin-fade { 50% { opacity: 0.3; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: spin-fade 1.3s ease-in-out infinite; }
+}
+
 /* ---- alert ------------------------------------------------------------ */
 
 .alert {
