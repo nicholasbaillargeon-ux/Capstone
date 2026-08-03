@@ -204,11 +204,34 @@ DRAFT_FACTS_MAX = int(os.environ.get("FD_DRAFT_FACTS_MAX", "0") or 0)
 # the serving-side lever worth asking for is a faster decode, not a warmer
 # cache. See evals/probe_llm.py.
 #
-# Off is still a supported posture: an endpoint that will not stream falls back
-# to a single call by itself (see llm._stream), so this flag is for turning the
-# progressive display off deliberately, not for compatibility.
+# Defaulted OFF, which reverses the decision this comment used to defend.
+#
+# The reason is not the measurement — the 15% still holds — it is what has to
+# be true for the page to collect it. A streamed draft is on screen before the
+# guard has read it, so for those seconds every figure in it is one nobody has
+# checked. It was labelled: an "unchecked — no figure traced yet" banner, the
+# text a shade back, citation markers left as raw [[fact:N]] rather than
+# rendered as chips, and the guarded report swapping into the same slot.
+#
+# That is a careful version of the one thing this project says it does not do.
+# The landing page's claim is that no figure is shown without provenance, and
+# "shown with a banner saying it has none yet" is a smaller promise than the
+# one being made. A reader who looks away for four seconds and back sees a
+# number; the banner is above it, not on it. And if the connection drops
+# mid-generation the unchecked draft is simply what stays on screen — nothing
+# arrives to replace it.
+#
+# Four seconds of blank screen is a cheap price for not having to argue any of
+# that. Median blank screen goes 12.8s to 17.2s and the worst case 26s to 30s;
+# the stage rail still moves and still reports elapsed time throughout, so the
+# page is never silent, only wordless.
+#
+# The path is kept, tested, and one variable away, because it is right for a
+# model that writes before it reasons — where the first word lands in a second
+# rather than at 75% of the call — and because turning it on is a decision
+# somebody can make with the tradeoff written down here.
 STREAM_DRAFT = os.environ.get(
-    "FD_STREAM_DRAFT", "1").strip().lower() not in ("0", "false", "no", "off")
+    "FD_STREAM_DRAFT", "0").strip().lower() not in ("0", "false", "no", "off")
 
 # Whether to end the planning loop as soon as a step has produced facts, rather
 # than making one more call to hear the model say it wants no more tools.

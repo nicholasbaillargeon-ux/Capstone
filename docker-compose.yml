@@ -45,7 +45,7 @@ services:
       # without reading the source to find out it exists.
       FD_REASONING_EFFORT: ${FD_REASONING_EFFORT-medium}
       FD_STOP_ON_FIRST_FACTS: ${FD_STOP_ON_FIRST_FACTS-1}
-      FD_STREAM_DRAFT: ${FD_STREAM_DRAFT-1}
+      FD_STREAM_DRAFT: ${FD_STREAM_DRAFT-0}
       FD_DRAFT_FACTS_MAX: ${FD_DRAFT_FACTS_MAX-0}
 
     extra_hosts:

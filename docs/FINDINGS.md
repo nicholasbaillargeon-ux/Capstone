@@ -296,10 +296,14 @@ Which settles two arguments before they start. Anything that shortens the
 prompt is worthless. Anything that removes a model call, or makes tokens come
 out faster, is worth exactly what it removes.
 
-## 1. Streaming the draft — kept, and honest about what it does
+## 1. Streaming the draft — built, measured, kept, then switched off
+
+**Reversed after the fact, and the measurement had nothing to do with it. The
+15% below is real. It was turned off anyway; the argument is at the end of this
+section.**
 
 The draft call is last and longest, and until it returned the page had nothing
-on it. It now arrives as it is written.
+on it. Streaming makes it arrive as it is written.
 
 It changes no total, and it was never going to: the same tokens are generated
 either way. What it changes is the blank screen, and by less than it would
@@ -329,6 +333,40 @@ onto the loop with `call_soon_threadsafe` is not the fix either — it reorders
 the finished report ahead of the stage frames that preceded it. The fix is to
 be direct on the loop and scheduled off it, and the absence of a running loop
 is the test for which you are.
+
+### Why it is off
+
+Everything above is true and the feature works. It is still defaulted off, and
+the reason is not in any of these numbers.
+
+Read the three mitigations again. They are all ways of saying *this figure has
+no provenance yet* while showing the figure. That is a careful version of the
+one thing this project claims it does not do. The landing page's argument is
+that no number appears without a filing behind it, and "appears with a banner
+saying the filing has not been checked yet" is a smaller promise than the one
+being made. A reader who looks away for four seconds and back sees a number;
+the banner is above it, not on it.
+
+And the mitigations have a hole. If the connection drops mid-generation the
+unchecked draft is what stays on screen — the `done` frame that would have
+replaced it never arrives. There is no timeout that cleans it up, because from
+the browser's side a slow model and a dead one look identical.
+
+The measured cost of not doing it: median blank screen 12.8s back to 17.2s,
+worst case 26s back to 30s. The rail still moves and still counts elapsed time
+throughout, so the page is never silent — only wordless. Four seconds of
+wordless is a cheap price for not having to make that argument.
+
+Kept, tested, and one variable away (`FD_STREAM_DRAFT=1`), because it is the
+right default for a model that writes before it reasons — where the first word
+lands in a second instead of at 75% of the call — and because that is a
+decision somebody should be able to make with the tradeoff written down.
+
+The general lesson is the one this file keeps relearning from the other
+direction: a measurement can tell you what something costs and never tell you
+whether to do it. §4 was rejected because the number was good and the answer
+was wrong. This one is rejected because the number is good and the promise
+matters more.
 
 ## 2. Stopping the planning loop on first facts — kept, and it is the win
 

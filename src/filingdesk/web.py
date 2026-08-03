@@ -82,7 +82,7 @@ HEARTBEAT = 2.0
 STAGES = [
     ("tools", "Retrieving facts", "MCP tool calls against the filings cache"),
     ("retrieve", "Reading notes", "vector search over the vault"),
-    ("draft", "Drafting", "one generation pass, streamed as it is written"),
+    ("draft", "Drafting", "one generation pass, shown once the guard clears it"),
     ("guard", "Checking every figure", "each numeral traced back to a fact"),
 ]
 
